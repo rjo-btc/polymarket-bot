@@ -5,6 +5,7 @@ const emaStrategy = require('./strategies/ema');
 const sessionStrategy = require('./strategies/session');
 const { resolveExpiredPositions } = require('./resolver');
 const { params: tunerParams } = require('./autotuner');
+const { notify } = require('./notify');
 
 const RISK_PCT = parseFloat(process.env.RISK_PCT) || 7; // % of current capital per trade
 const CAPITAL_START = parseFloat(process.env.CAPITAL_START_USD) || 1000;
@@ -24,6 +25,17 @@ function getStakeSize() {
 let running = false;
 let loopInterval = null;
 
+// Bot status tracking
+const botStatus = {
+  state: 'starting',   // 'trading' | 'analyzing' | 'error'
+  detail: 'Initializing...',
+  lastTick: null,
+  lastError: null,
+  openPositions: 0,
+};
+
+function getBotStatus() { return { ...botStatus }; }
+
 // Track which markets we've already entered per strategy to avoid duplicates
 const enteredMarkets = new Map(); // key: `${strategy}-${market_slug}`
 // Throttle "outside entry window" decisions to every 30s per strategy
@@ -39,15 +51,35 @@ async function traderLoop() {
 
     const market = await findCurrentMarket();
     if (!market) {
+      botStatus.state = 'error';
+      botStatus.detail = 'No active market found';
+      botStatus.lastTick = Date.now();
       running = false;
       return;
     }
 
     const btc = getBtcPrice();
     if (!btc.price) {
+      botStatus.state = 'error';
+      botStatus.detail = 'No BTC price available';
+      botStatus.lastTick = Date.now();
       running = false;
       return;
     }
+
+    // Update open position count
+    const openPos = getOpenPositions.all();
+    botStatus.openPositions = openPos.length;
+    const secsLeft = Math.floor((market.endMs - Date.now()) / 1000);
+
+    if (openPos.length > 0) {
+      botStatus.state = 'trading';
+      botStatus.detail = `In ${openPos.length} position(s) — ${secsLeft}s to resolution`;
+    } else {
+      botStatus.state = 'analyzing';
+      botStatus.detail = `Watching ${market.market_slug} — ${secsLeft}s left`;
+    }
+    botStatus.lastTick = Date.now();
 
     // Evaluate both strategies
     const strategies = [emaStrategy, sessionStrategy];
@@ -121,7 +153,11 @@ async function traderLoop() {
               });
 
               enteredMarkets.set(key, true);
+              botStatus.state = 'trading';
+              botStatus.detail = `Entered ${decision.side.toUpperCase()} via ${decision.strategy} on ${market.market_slug}`;
+              botStatus.openPositions++;
               console.log(`[Trader] ${decision.strategy.toUpperCase()} ENTERED ${decision.side.toUpperCase()} on ${market.market_slug}`);
+              notify(`📈 ENTERED ${decision.side.toUpperCase()} — $${stakeUsd.toFixed(2)} via ${decision.strategy} @ ${entryPrice.toFixed(3)} | BTC $${btc.price.toFixed(2)} | ${secsToEnd}s to end`);
             }
           }
         }
@@ -145,6 +181,9 @@ async function traderLoop() {
     }
   } catch (e) {
     console.error('[Trader] Loop error:', e.message);
+    botStatus.state = 'error';
+    botStatus.detail = e.message;
+    botStatus.lastError = { message: e.message, at: Date.now() };
   } finally {
     running = false;
   }
@@ -160,4 +199,4 @@ function stopTrader() {
   if (loopInterval) clearInterval(loopInterval);
 }
 
-module.exports = { startTrader, stopTrader };
+module.exports = { startTrader, stopTrader, getBotStatus };

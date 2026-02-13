@@ -181,8 +181,14 @@
   </head>
   <body>
     <div class="wrap">
-      <h1>Polymarket BTC 5m Paper Trader</h1>
-      <div class="muted">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <h1 style="margin:0;">Polymarket BTC 5m Paper Trader</h1>
+        <span id="botStatus" title="Bot status" style="display:inline-flex;align-items:center;gap:6px;font-size:.8rem;padding:3px 10px;border-radius:20px;background:rgba(255,255,255,.06);border:1px solid var(--border);">
+          <span id="botDot" style="width:10px;height:10px;border-radius:50%;background:#666;display:inline-block;"></span>
+          <span id="botLabel" style="color:var(--muted);">Loading...</span>
+        </span>
+      </div>
+      <div class="muted" style="margin-top:4px;">
         Logs: time-to-end at entry, entry price, BTC now, BTC at market start, and PnL.
       </div>
 
@@ -880,10 +886,24 @@
         }
       });
 
+      async function refreshBotStatus() {
+        try {
+          const s = await fetchJSON('/api/bot-status');
+          const dot = $('botDot');
+          const label = $('botLabel');
+          const colors = { trading: '#1dd49a', analyzing: '#f0b232', error: '#ff5c8a', starting: '#666' };
+          dot.style.background = colors[s.state] || '#666';
+          label.textContent = s.detail || s.state;
+          label.style.color = s.state === 'error' ? '#ff5c8a' : 'var(--muted)';
+        } catch { /* silent */ }
+      }
+
       refreshAll();
+      refreshBotStatus();
       setInterval(updateLiveMarketClock, 1000);
       setInterval(refreshMarket, 1000);
       setInterval(refreshPanels, 5000);
+      setInterval(refreshBotStatus, 3000);
     </script>
   </body>
 </html>

@@ -3,7 +3,8 @@ const path = require('path');
 const { getAllPositions, getOpenPositions, insertPosition, getRecentDecisions } = require('./db');
 const { findCurrentMarket, fetchTokenPrices, getCachedMarket } = require('./market');
 const { getBtcPrice, getPrevBtcPrice, startPricePolling, fetchBtcPrice } = require('./btcPrice');
-const { startTrader } = require('./trader');
+const { startTrader, getBotStatus } = require('./trader');
+const { drainNotifications } = require('./notify');
 const { runAnalysis } = require('./analysis');
 const { getParams, getTuneLog } = require('./autotuner');
 
@@ -276,6 +277,24 @@ app.get('/api/tuner', (req, res) => {
     res.json({ params: getParams(), log: getTuneLog() });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/notifications', (req, res) => {
+  res.json(drainNotifications());
+});
+
+app.get('/api/bot-status', (req, res) => {
+  try {
+    const s = getBotStatus();
+    // If lastTick is stale (>30s), report error
+    if (s.lastTick && Date.now() - s.lastTick > 30000) {
+      s.state = 'error';
+      s.detail = 'Trader loop stalled — no tick in ' + Math.round((Date.now() - s.lastTick) / 1000) + 's';
+    }
+    res.json(s);
+  } catch (e) {
+    res.json({ state: 'error', detail: e.message });
   }
 });
 
