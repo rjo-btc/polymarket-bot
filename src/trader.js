@@ -6,6 +6,7 @@ const sessionStrategy = require('./strategies/session');
 const { resolveExpiredPositions } = require('./resolver');
 const { params: tunerParams } = require('./autotuner');
 const { notify } = require('./notify');
+const { scoreSetup } = require('./confidence');
 
 const RISK_PCT = parseFloat(process.env.RISK_PCT) || 7; // % of current capital per trade
 const CAPITAL_START = parseFloat(process.env.CAPITAL_START_USD) || 1000;
@@ -135,17 +136,45 @@ async function traderLoop() {
               // Apply side bias from auto-tuner
               const sideWeight = decision.side === 'up' ? (tp.side_up_weight ?? 1.0) : (tp.side_down_weight ?? 1.0);
               if (sideWeight < 1.0) {
-                // Probabilistic filter — skip trade (1 - weight)% of the time
                 if (Math.random() > sideWeight) {
                   console.log(`[Trader] ${decision.strategy.toUpperCase()} SIDE BIAS SKIP: ${decision.side.toUpperCase()} weight ${sideWeight} (rolled skip)`);
                   continue;
                 }
-                console.log(`[Trader] ${decision.strategy.toUpperCase()} SIDE BIAS PASS: ${decision.side.toUpperCase()} weight ${sideWeight} (rolled enter)`);
               }
 
-              const stakeUsd = getStakeSize();
-              const shares = stakeUsd / entryPrice;
+              // Parse setup metrics for confidence scoring
+              const pa = {};
+              const paMatch = (decision.reason || '').match(/PA\[([^\]]+)\]/);
+              if (paMatch) {
+                paMatch[1].split(',').forEach(part => {
+                  const [k, v] = part.split('=').map(s => s.trim());
+                  if (k && v) pa[k] = isNaN(v) ? v : parseFloat(v);
+                });
+              }
+
               const secsToEnd = Math.floor((market.endMs - Date.now()) / 1000);
+              const setup = {
+                entry_price: entryPrice,
+                seconds_to_end: secsToEnd,
+                dist_bps: pa.dist || null,
+                slope: pa.slope || null,
+                side: decision.side,
+              };
+
+              // Score confidence and apply tier multiplier (only after Kelly activation at 50 trades)
+              const confidence = scoreSetup(setup);
+              const KELLY_THRESHOLD = 50;
+              const resolvedCount = getAllPositions.all().filter(p => p.status === 'resolved').length;
+              const kellyActive = resolvedCount >= KELLY_THRESHOLD;
+
+              let stakeUsd;
+              if (kellyActive) {
+                stakeUsd = Math.round(getStakeSize() * confidence.multiplier * 100) / 100;
+                console.log(`[Trader] CONFIDENCE: Tier ${confidence.tier} (${confidence.tier_label}) score=${confidence.score} → ${confidence.multiplier}x size ($${stakeUsd})`);
+              } else {
+                stakeUsd = getStakeSize();
+              }
+              const shares = stakeUsd / entryPrice;
 
               insertPosition.run({
                 market_slug: market.market_slug,
@@ -168,7 +197,8 @@ async function traderLoop() {
               botStatus.detail = `Entered ${decision.side.toUpperCase()} via ${decision.strategy} on ${market.market_slug}`;
               botStatus.openPositions++;
               console.log(`[Trader] ${decision.strategy.toUpperCase()} ENTERED ${decision.side.toUpperCase()} on ${market.market_slug}`);
-              notify(`📈 ENTERED ${decision.side.toUpperCase()} — $${stakeUsd.toFixed(2)} via ${decision.strategy} @ ${entryPrice.toFixed(3)} | BTC $${btc.price.toFixed(2)} | ${secsToEnd}s to end`);
+              const tierInfo = kellyActive ? ` | T${confidence.tier} (${confidence.score})` : '';
+              notify(`📈 ENTERED ${decision.side.toUpperCase()} — $${stakeUsd.toFixed(2)} via ${decision.strategy} @ ${entryPrice.toFixed(3)} | BTC $${btc.price.toFixed(2)} | ${secsToEnd}s to end${tierInfo}`);
             }
           }
         }

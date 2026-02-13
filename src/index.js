@@ -4,6 +4,7 @@ const { getAllPositions, getOpenPositions, insertPosition, getRecentDecisions, u
 const { findCurrentMarket, fetchTokenPrices, getCachedMarket } = require('./market');
 const { getBtcPrice, getPrevBtcPrice, startPricePolling, fetchBtcPrice } = require('./btcPrice');
 const { startTrader, getBotStatus } = require('./trader');
+const { buildWinProfile, TIER_MULTIPLIERS, TIER_THRESHOLDS } = require('./confidence');
 const { drainNotifications } = require('./notify');
 const { runAnalysis } = require('./analysis');
 const { getParams, getTuneLog } = require('./autotuner');
@@ -315,6 +316,25 @@ app.post('/api/backfill-postmortems', (req, res) => {
 
 app.get('/api/notifications', (req, res) => {
   res.json(drainNotifications());
+});
+
+app.get('/api/confidence', (req, res) => {
+  try {
+    const profile = buildWinProfile();
+    const positions = getAllPositions.all().filter(p => p.status === 'resolved');
+    const kellyActive = positions.length >= 50;
+    res.json({
+      kelly_active: kellyActive,
+      trades_resolved: positions.length,
+      trades_needed: Math.max(0, 50 - positions.length),
+      tiers: TIER_MULTIPLIERS,
+      thresholds: TIER_THRESHOLDS,
+      win_profile: profile,
+      status: kellyActive ? 'active' : profile ? 'preview' : 'insufficient_data',
+    });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
 });
 
 app.get('/api/bot-status', (req, res) => {
