@@ -72,12 +72,15 @@ const getRecentDecisions = db.prepare(`SELECT * FROM decisions ORDER BY id DESC 
 // Cleanup old decisions
 const pruneDecisions = db.prepare(`DELETE FROM decisions WHERE id NOT IN (SELECT id FROM decisions ORDER BY id DESC LIMIT 100)`);
 
+const updatePostMortem = db.prepare(`UPDATE positions SET post_mortem = @post_mortem WHERE id = @id`);
+
 module.exports = {
   db,
   insertPosition,
   getAllPositions,
   getOpenPositions,
   resolvePosition,
+  updatePostMortem,
   insertDecision,
   getRecentDecisions,
   pruneDecisions,

@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { getAllPositions, getOpenPositions, insertPosition, getRecentDecisions } = require('./db');
+const { getAllPositions, getOpenPositions, insertPosition, getRecentDecisions, updatePostMortem } = require('./db');
 const { findCurrentMarket, fetchTokenPrices, getCachedMarket } = require('./market');
 const { getBtcPrice, getPrevBtcPrice, startPricePolling, fetchBtcPrice } = require('./btcPrice');
 const { startTrader, getBotStatus } = require('./trader');
@@ -283,6 +283,31 @@ app.get('/api/analysis', (req, res) => {
 app.get('/api/tuner', (req, res) => {
   try {
     res.json({ params: getParams(), log: getTuneLog() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Backfill win post-mortems for resolved wins missing them
+app.post('/api/backfill-postmortems', (req, res) => {
+  try {
+    const positions = getAllPositions.all();
+    const resolved = positions.filter(p => p.status === 'resolved' && p.pnl > 0 && !p.post_mortem);
+    let count = 0;
+    for (const pos of resolved) {
+      const btcStart = pos.btc_price_at_start || pos.btc_price_at_entry;
+      const btcEnd = pos.btc_price_at_end || 0;
+      const btcWentUp = btcEnd >= btcStart;
+      const returnPct = ((pos.pnl / pos.stake_usd) * 100).toFixed(1);
+      const btcMoveBps = btcStart ? ((btcEnd - btcStart) / btcStart * 10000).toFixed(1) : '0';
+      const postMortem = `WIN REVIEW: Bought ${pos.side.toUpperCase()} @ ${pos.entry_price.toFixed(3)}, ` +
+        `BTC start=${btcStart.toFixed(2)} end=${btcEnd.toFixed(2)} (${btcWentUp ? 'UP' : 'DOWN'}). ` +
+        `Strategy: ${pos.strategy}. Return: +${returnPct}% ($${pos.pnl.toFixed(2)}). ` +
+        `BTC moved ${btcMoveBps} bps. Entry ${pos.seconds_to_end_at_entry}s before end.`;
+      updatePostMortem.run({ id: pos.id, post_mortem: postMortem });
+      count++;
+    }
+    res.json({ backfilled: count });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
