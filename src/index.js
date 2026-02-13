@@ -4,6 +4,7 @@ const { getAllPositions, getOpenPositions, insertPosition, getRecentDecisions } 
 const { findCurrentMarket, fetchTokenPrices, getCachedMarket } = require('./market');
 const { getBtcPrice, getPrevBtcPrice, startPricePolling, fetchBtcPrice } = require('./btcPrice');
 const { startTrader } = require('./trader');
+const { runAnalysis } = require('./analysis');
 
 const app = express();
 app.use(express.json());
@@ -256,6 +257,14 @@ app.get('/api/kelly', (req, res) => {
       strategies,
       combined,
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/analysis', (req, res) => {
+  try {
+    res.json(runAnalysis());
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

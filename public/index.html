@@ -310,6 +310,14 @@
         </div>
       </section>
 
+      <section class="card" style="margin-top: 14px" id="analysisCard">
+        <div style="font-weight: 700; margin-bottom: 6px">Win/Loss Analysis</div>
+        <div class="muted tiny">Pattern detection comparing wins vs losses • Auto-updates after each trade</div>
+        <div id="analysisContent" style="margin-top: 10px">
+          <div class="muted">Waiting for trades...</div>
+        </div>
+      </section>
+
       <section class="card" style="margin-top: 14px">
         <div style="font-weight: 700; margin-bottom: 6px">Strategy comparison (paper)</div>
         <div class="muted tiny">EMA vs session/time strategy performance</div>
@@ -733,8 +741,88 @@
         }
       }
 
+      async function refreshAnalysis() {
+        try {
+          const a = await fetchJSON('/api/analysis');
+          const el = $('analysisContent');
+
+          if (a.insufficient_data) {
+            el.innerHTML = `<div class="muted">Need at least 2 resolved trades for analysis (have ${a.total_trades})</div>`;
+            return;
+          }
+
+          const sevColor = { high: 'var(--red)', medium: 'var(--blue)', info: 'var(--muted)' };
+          const sevIcon = { high: '🔴', medium: '🟡', info: 'ℹ️' };
+
+          // Patterns
+          const patternsHtml = a.patterns.length > 0
+            ? a.patterns.map(p => `
+                <div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)">
+                  <span>${sevIcon[p.severity] || '•'}</span>
+                  <div>
+                    <span style="font-size:0.7rem;text-transform:uppercase;color:${sevColor[p.severity] || 'var(--muted)'};font-weight:600">${p.type.replace('_', ' ')}</span>
+                    <div style="font-size:0.85rem">${p.finding}</div>
+                  </div>
+                </div>`).join('')
+            : '<div class="muted">No patterns detected yet</div>';
+
+          // Suggestions
+          const suggestionsHtml = a.suggestions.length > 0
+            ? `<div style="margin-top:10px;padding:10px;background:rgba(255,92,138,0.08);border:1px solid rgba(255,92,138,0.2);border-radius:8px">
+                <div style="font-weight:700;font-size:0.85rem;margin-bottom:6px">⚡ Suggested Actions</div>
+                ${a.suggestions.map(s => `<div style="font-size:0.85rem;padding:2px 0">• ${s}</div>`).join('')}
+              </div>`
+            : '';
+
+          // Win vs Loss comparison table
+          const compRow = (label, wVal, lVal) => {
+            if (wVal == null && lVal == null) return '';
+            return `<tr><td class="muted">${label}</td><td class="green">${wVal ?? '-'}</td><td class="red">${lVal ?? '-'}</td></tr>`;
+          };
+
+          const compTable = (a.win_stats && a.loss_stats)
+            ? `<table style="font-size:0.85rem;margin-top:8px">
+                <thead><tr><th>Metric</th><th>Wins (${a.wins})</th><th>Losses (${a.losses})</th></tr></thead>
+                <tbody>
+                  ${compRow('Avg entry price', a.win_stats.avg_entry_price, a.loss_stats.avg_entry_price)}
+                  ${compRow('Avg time to end', a.win_stats.avg_seconds_to_end ? a.win_stats.avg_seconds_to_end + 's' : null, a.loss_stats.avg_seconds_to_end ? a.loss_stats.avg_seconds_to_end + 's' : null)}
+                  ${compRow('Avg EMA dist (bps)', a.win_stats.avg_dist_bps, a.loss_stats.avg_dist_bps)}
+                  ${compRow('Avg slope', a.win_stats.avg_slope, a.loss_stats.avg_slope)}
+                  ${compRow('Avg BTC move (bps)', a.win_stats.avg_btc_move_bps, a.loss_stats.avg_btc_move_bps)}
+                  ${compRow('Side split', `↑${a.win_stats.sides.up} ↓${a.win_stats.sides.down}`, `↑${a.loss_stats.sides.up} ↓${a.loss_stats.sides.down}`)}
+                </tbody>
+              </table>`
+            : '';
+
+          // Strategy health
+          const stratHtml = Object.entries(a.by_strategy).map(([name, s]) => {
+            const recColor = s.recommendation === 'ACTIVE' ? 'var(--green)' : s.recommendation.startsWith('DISABLE') ? 'var(--red)' : 'var(--blue)';
+            return `<span style="display:inline-block;margin-right:12px;font-size:0.85rem">
+              <strong>${name.toUpperCase()}</strong> ${s.win_rate}% WR (${s.total})
+              <span style="color:${recColor};font-weight:600">${s.recommendation.split('—')[0].trim()}</span>
+            </span>`;
+          }).join('');
+
+          el.innerHTML = `
+            <div style="display:flex;gap:14px;flex-wrap:wrap">
+              <div style="flex:1;min-width:300px">
+                <div style="font-weight:600;margin-bottom:6px">Patterns Detected</div>
+                ${patternsHtml}
+                ${suggestionsHtml}
+              </div>
+              <div style="flex:1;min-width:300px">
+                <div style="font-weight:600;margin-bottom:6px">Win vs Loss Comparison</div>
+                ${compTable}
+                <div style="margin-top:10px">${stratHtml}</div>
+              </div>
+            </div>`;
+        } catch (e) {
+          console.error('Analysis fetch error:', e);
+        }
+      }
+
       async function refreshAll() {
-        await Promise.all([refreshMarket(), refreshPanels(), refreshKelly()]);
+        await Promise.all([refreshMarket(), refreshPanels(), refreshKelly(), refreshAnalysis()]);
       }
 
       $('tradeForm').addEventListener('submit', async (ev) => {
