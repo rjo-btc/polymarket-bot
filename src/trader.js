@@ -25,6 +25,8 @@ let loopInterval = null;
 
 // Track which markets we've already entered per strategy to avoid duplicates
 const enteredMarkets = new Map(); // key: `${strategy}-${market_slug}`
+// Throttle "outside entry window" decisions to every 30s per strategy
+const lastSkipLog = new Map(); // key: `${strategy}` -> timestamp
 
 async function traderLoop() {
   if (running) return;
@@ -52,17 +54,25 @@ async function traderLoop() {
       try {
         const decision = await strat.evaluate(market, btc.price);
 
-        // Log decision
-        insertDecision.run({
-          strategy: decision.strategy,
-          market_slug: decision.market_slug,
-          market_end_at: decision.market_end_at,
-          last_checked_at: decision.last_checked_at,
-          seconds_to_end: decision.seconds_to_end,
-          action: decision.action,
-          side: decision.side,
-          reason: decision.reason,
-        });
+        // Log decision (throttle "outside entry window" to every 30s)
+        const isOutsideWindow = decision.action === 'SKIP' && /outside entry window/i.test(decision.reason);
+        const skipKey = decision.strategy;
+        const now = Date.now();
+        const shouldLog = !isOutsideWindow || !lastSkipLog.has(skipKey) || (now - lastSkipLog.get(skipKey)) >= 30000;
+
+        if (shouldLog) {
+          insertDecision.run({
+            strategy: decision.strategy,
+            market_slug: decision.market_slug,
+            market_end_at: decision.market_end_at,
+            last_checked_at: decision.last_checked_at,
+            seconds_to_end: decision.seconds_to_end,
+            action: decision.action,
+            side: decision.side,
+            reason: decision.reason,
+          });
+          if (isOutsideWindow) lastSkipLog.set(skipKey, now);
+        }
 
         // Enter trade if signaled and not already in this market for this strategy
         if (decision.action === 'ENTER' && decision.side) {
