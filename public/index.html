@@ -476,6 +476,45 @@
         return v >= 0 ? 'green' : 'red';
       }
 
+      function fmtReason(raw) {
+        if (!raw) return '-';
+        // Parse PA block if present
+        const paMatch = raw.match(/PA\[([^\]]+)\]/);
+        const pa = {};
+        if (paMatch) {
+          paMatch[1].split(',').forEach(part => {
+            const [k, v] = part.split('=').map(s => s.trim());
+            if (k && v) pa[k] = v;
+          });
+        }
+
+        // Extract signal direction
+        const isLong = /LONG/i.test(raw);
+        const isShort = /SHORT/i.test(raw);
+        const dir = isLong ? '🟢 LONG' : isShort ? '🔴 SHORT' : '';
+
+        const dist = pa.dist || '-';
+        const slope = pa.slope || '-';
+
+        return `<div><strong>${dir}</strong></div>` +
+          `<div>Dist: ${dist} · Slope: ${slope}</div>`;
+      }
+
+      function fmtPostMortem(raw) {
+        if (!raw) return '-';
+        // Extract key info from verbose post mortem
+        const pnlMatch = raw.match(/PnL \$([-\d.]+)/);
+        const modeMatch = raw.match(/Likely failure mode: ([^.]+)/);
+        const actionMatch = raw.match(/Action: ([^.]+)/);
+
+        let parts = [];
+        if (pnlMatch) parts.push(`<span class="red">${fmtUsd(parseFloat(pnlMatch[1]))}</span>`);
+        if (modeMatch) parts.push(modeMatch[1].trim());
+        if (actionMatch) parts.push(`<em>${actionMatch[1].trim()}</em>`);
+
+        return parts.length > 0 ? parts.join('<br>') : raw.slice(0, 80);
+      }
+
       function renderPositions(rows) {
         const body = $('positionsBody');
         if (!rows || rows.length === 0) {
@@ -502,8 +541,8 @@
                 <td>${fmtProb(p.mark_price)}</td>
                 <td class="${pnlClass(p.pnl)}">${pnlTxt}</td>
                 <td><span class="badge">${p.status}</span></td>
-                <td class="tiny" style="white-space:normal">${(p.entry_reason || '-')}</td>
-                <td class="tiny" style="white-space:normal">${(p.post_mortem || '-')}</td>
+                <td class="tiny" style="white-space:normal">${fmtReason(p.entry_reason)}</td>
+                <td class="tiny" style="white-space:normal">${fmtPostMortem(p.post_mortem)}</td>
               </tr>
             `;
           })
