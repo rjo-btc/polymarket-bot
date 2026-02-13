@@ -207,21 +207,37 @@ function runAnalysis() {
     };
   }
 
-  // Suggested parameter tweaks
+  // Suggested parameter tweaks — check if already implemented by autotuner
+  const { getParams } = require('./autotuner');
+  const currentParams = getParams();
+  const ep = currentParams.ema || {};
+
   const suggestions = [];
   for (const pattern of patterns) {
     if (pattern.severity === 'high') {
       if (pattern.type === 'ema_distance' && pattern.finding.includes('smaller')) {
-        suggestions.push('Increase minimum EMA distance threshold (currently 8 bps)');
+        const implemented = ep.min_ema_dist_bps > 8;
+        suggestions.push({ text: `Increase minimum EMA distance threshold`, implemented, param: `min_ema_dist: ${ep.min_ema_dist_bps} bps` });
       }
       if (pattern.type === 'slope' && pattern.finding.includes('weaker')) {
-        suggestions.push('Add minimum slope threshold for entries');
+        const implemented = ep.min_slope_abs > 0;
+        suggestions.push({ text: `Add minimum slope threshold for entries`, implemented, param: `min_slope: ${ep.min_slope_abs}` });
       }
       if (pattern.type === 'entry_price' && pattern.finding.includes('pay more')) {
-        suggestions.push('Add max entry price filter (avoid entries > 0.70)');
+        const implemented = ep.max_entry_price < 1.0;
+        suggestions.push({ text: `Cap max entry price for better R:R`, implemented, param: `max_price: ${ep.max_entry_price}` });
+      }
+      if (pattern.type === 'entry_price' && pattern.finding.includes('cheaper')) {
+        const implemented = ep.min_entry_price > 0;
+        suggestions.push({ text: `Set minimum entry price — avoid market-disagrees trades`, implemented, param: `min_price: ${ep.min_entry_price}` });
       }
       if (pattern.type === 'side_bias') {
-        suggestions.push(pattern.finding);
+        const implemented = ep.side_up_weight < 1.0 || ep.side_down_weight < 1.0;
+        suggestions.push({ text: pattern.finding, implemented, param: `↑wt: ${ep.side_up_weight} ↓wt: ${ep.side_down_weight}` });
+      }
+      if (pattern.type === 'timing') {
+        const implemented = ep.entry_window_min > 90;
+        suggestions.push({ text: pattern.finding.split('—')[0].trim(), implemented, param: `window: ${ep.entry_window_min}-${ep.entry_window_max}s` });
       }
     }
   }
