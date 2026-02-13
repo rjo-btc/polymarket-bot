@@ -743,7 +743,7 @@
 
       async function refreshAnalysis() {
         try {
-          const a = await fetchJSON('/api/analysis');
+          const [a, t] = await Promise.all([fetchJSON('/api/analysis'), fetchJSON('/api/tuner')]);
           const el = $('analysisContent');
 
           if (a.insufficient_data) {
@@ -803,12 +803,36 @@
             </span>`;
           }).join('');
 
+          // Auto-tuner params
+          const ep = t.params.ema;
+          const tunerParamsHtml = `
+            <div style="margin-top:12px;padding:10px;background:rgba(89,162,255,0.08);border:1px solid rgba(89,162,255,0.2);border-radius:8px">
+              <div style="font-weight:700;font-size:0.85rem;margin-bottom:6px">🔧 Active Parameters (auto-tuned)</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:0.82rem">
+                <div><span class="muted">EMA dist:</span> ≥${ep.min_ema_dist_bps} bps</div>
+                <div><span class="muted">Min slope:</span> ≥${ep.min_slope_abs}</div>
+                <div><span class="muted">Entry window:</span> ${ep.entry_window_min}-${ep.entry_window_max}s</div>
+                <div><span class="muted">Min price:</span> ${ep.min_entry_price > 0 ? ep.min_entry_price : 'none'}</div>
+                <div><span class="muted">Max price:</span> ${ep.max_entry_price < 1 ? ep.max_entry_price : 'none'}</div>
+                <div><span class="muted">EMA:</span> ${ep.enabled ? '<span class="green">ON</span>' : '<span class="red">OFF</span>'}</div>
+              </div>
+            </div>`;
+
+          // Tune log
+          const tuneLogHtml = t.log.length > 0
+            ? `<div style="margin-top:8px;font-size:0.75rem;max-height:100px;overflow-y:auto">
+                ${t.log.slice(-10).reverse().map(l => `<div class="muted">${new Date(l.time).toLocaleTimeString()} — ${l.msg}</div>`).join('')}
+              </div>`
+            : '';
+
           el.innerHTML = `
             <div style="display:flex;gap:14px;flex-wrap:wrap">
               <div style="flex:1;min-width:300px">
                 <div style="font-weight:600;margin-bottom:6px">Patterns Detected</div>
                 ${patternsHtml}
                 ${suggestionsHtml}
+                ${tunerParamsHtml}
+                ${tuneLogHtml}
               </div>
               <div style="flex:1;min-width:300px">
                 <div style="font-weight:600;margin-bottom:6px">Win vs Loss Comparison</div>

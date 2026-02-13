@@ -1,4 +1,5 @@
 const { fetchKlines } = require('../btcPrice');
+const { params } = require('../autotuner');
 
 function calcEMA(data, period) {
   if (data.length === 0) return [];
@@ -21,13 +22,20 @@ async function evaluate(market, btcPrice) {
     seconds_to_end: secsToEnd,
   };
 
-  // Only enter in 90-180s window
-  if (secsToEnd < 90 || secsToEnd > 180) {
+  const p = params.ema;
+
+  // Check if strategy is disabled
+  if (!p.enabled) {
+    return { ...base, action: 'SKIP', side: null, reason: 'Strategy disabled by auto-tuner' };
+  }
+
+  // Only enter in dynamic window
+  if (secsToEnd < p.entry_window_min || secsToEnd > p.entry_window_max) {
     return {
       ...base,
       action: 'SKIP',
       side: null,
-      reason: `Outside entry window (${secsToEnd}s to end, need 90-180s)`,
+      reason: `Outside entry window (${secsToEnd}s to end, need ${p.entry_window_min}-${p.entry_window_max}s)`,
     };
   }
 
@@ -50,8 +58,10 @@ async function evaluate(market, btcPrice) {
 
   const paStr = `PA[dist=${Math.abs(distBps).toFixed(1)} bps,slope=${slope.toFixed(4)},ema20=${fast.toFixed(2)},ema200=${slow.toFixed(2)}]`;
 
-  // LONG: price > EMA20 > EMA200, positive slope, dist >= 8 bps
-  if (price > fast && fast > slow && slope > 0 && Math.abs(emaDistBps) >= 8) {
+  const slopeAbs = Math.abs(slope);
+
+  // LONG: price > EMA20 > EMA200, positive slope, dist >= threshold
+  if (price > fast && fast > slow && slope > 0 && Math.abs(emaDistBps) >= p.min_ema_dist_bps && slopeAbs >= p.min_slope_abs) {
     return {
       ...base,
       action: 'ENTER',
@@ -60,14 +70,24 @@ async function evaluate(market, btcPrice) {
     };
   }
 
-  // SHORT: price < EMA20 < EMA200, negative slope, dist >= 8 bps
-  if (price < fast && fast < slow && slope < 0 && Math.abs(emaDistBps) >= 8) {
+  // SHORT: price < EMA20 < EMA200, negative slope, dist >= threshold
+  if (price < fast && fast < slow && slope < 0 && Math.abs(emaDistBps) >= p.min_ema_dist_bps && slopeAbs >= p.min_slope_abs) {
     return {
       ...base,
       action: 'ENTER',
       side: 'down',
       reason: `SHORT signal: price ${price.toFixed(2)} < EMA20 ${fast.toFixed(2)} < EMA200 ${slow.toFixed(2)}; ${paStr}`,
     };
+  }
+
+  // Log why we didn't enter even with alignment
+  if ((price > fast && fast > slow) || (price < fast && fast < slow)) {
+    const reasons = [];
+    if (Math.abs(emaDistBps) < p.min_ema_dist_bps) reasons.push(`dist ${Math.abs(emaDistBps).toFixed(1)} < ${p.min_ema_dist_bps} bps`);
+    if (slopeAbs < p.min_slope_abs) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${p.min_slope_abs}`);
+    if (reasons.length > 0) {
+      return { ...base, action: 'SKIP', side: null, reason: `EMA aligned but filtered: ${reasons.join(', ')}; ${paStr}` };
+    }
   }
 
   return {

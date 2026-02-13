@@ -4,6 +4,7 @@ const { insertPosition, insertDecision, pruneDecisions, getOpenPositions, getAll
 const emaStrategy = require('./strategies/ema');
 const sessionStrategy = require('./strategies/session');
 const { resolveExpiredPositions } = require('./resolver');
+const { params: tunerParams } = require('./autotuner');
 
 const RISK_PCT = parseFloat(process.env.RISK_PCT) || 7; // % of current capital per trade
 const CAPITAL_START = parseFloat(process.env.CAPITAL_START_USD) || 1000;
@@ -87,6 +88,17 @@ async function traderLoop() {
               const entryPrice = decision.side === 'up'
                 ? (prices.up || 0.5)
                 : (prices.down || 0.5);
+
+              // Apply entry price filter from auto-tuner
+              const tp = tunerParams[decision.strategy] || {};
+              if (tp.min_entry_price && entryPrice < tp.min_entry_price) {
+                console.log(`[Trader] ${decision.strategy.toUpperCase()} FILTERED: entry price ${entryPrice.toFixed(3)} < min ${tp.min_entry_price}`);
+                continue;
+              }
+              if (tp.max_entry_price && tp.max_entry_price < 1.0 && entryPrice > tp.max_entry_price) {
+                console.log(`[Trader] ${decision.strategy.toUpperCase()} FILTERED: entry price ${entryPrice.toFixed(3)} > max ${tp.max_entry_price}`);
+                continue;
+              }
 
               const stakeUsd = getStakeSize();
               const shares = stakeUsd / entryPrice;

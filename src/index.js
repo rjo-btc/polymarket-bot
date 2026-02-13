@@ -5,6 +5,7 @@ const { findCurrentMarket, fetchTokenPrices, getCachedMarket } = require('./mark
 const { getBtcPrice, getPrevBtcPrice, startPricePolling, fetchBtcPrice } = require('./btcPrice');
 const { startTrader } = require('./trader');
 const { runAnalysis } = require('./analysis');
+const { getParams, getTuneLog } = require('./autotuner');
 
 const app = express();
 app.use(express.json());
@@ -265,6 +266,14 @@ app.get('/api/kelly', (req, res) => {
 app.get('/api/analysis', (req, res) => {
   try {
     res.json(runAnalysis());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/tuner', (req, res) => {
+  try {
+    res.json({ params: getParams(), log: getTuneLog() });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

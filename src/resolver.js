@@ -1,5 +1,6 @@
 const { getOpenPositions, resolvePosition } = require('./db');
 const { getBtcPrice } = require('./btcPrice');
+const { autoTune } = require('./autotuner');
 
 async function resolveExpiredPositions() {
   const open = getOpenPositions.all();
@@ -37,6 +38,9 @@ async function resolveExpiredPositions() {
     });
 
     console.log(`[Resolver] Position #${pos.id} ${won ? 'WON' : 'LOST'}: PnL $${pnl.toFixed(2)}`);
+
+    // Run auto-tuner after every resolution
+    try { autoTune(); } catch (e) { console.error('[Resolver] AutoTune error:', e.message); }
   }
 }
 
