@@ -220,6 +220,13 @@ app.get('/api/kelly', (req, res) => {
       const adjusted = halfKelly * confidence;
       const capped = Math.min(adjusted, MAX_RISK);
 
+      // Sharpe ratio: mean(return%) / stdev(return%)
+      const returns = trades.map(p => p.pnl / p.stake_usd);
+      const meanReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+      const variance = returns.length > 1 ? returns.reduce((s, r) => s + (r - meanReturn) ** 2, 0) / (returns.length - 1) : 0;
+      const stdReturn = Math.sqrt(variance);
+      const sharpe = stdReturn > 0 ? meanReturn / stdReturn : 0;
+
       return {
         n,
         wins: wins.length,
@@ -232,6 +239,7 @@ app.get('/api/kelly', (req, res) => {
         confidence: Math.round(confidence * 1000) / 10,
         adjusted_pct: Math.round(adjusted * 1000) / 10,
         capped_pct: Math.round(capped * 1000) / 10,
+        sharpe_ratio: Math.round(sharpe * 100) / 100,
         status: n >= MIN_TRADES ? 'active' : 'collecting_data',
         trades_needed: Math.max(0, MIN_TRADES - n),
       };

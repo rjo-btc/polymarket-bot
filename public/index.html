@@ -737,6 +737,7 @@
                   <div><span class="muted">Total trades:</span> ${k.combined.n}</div>
                   <div><span class="muted">Win rate:</span> <span class="${k.combined.win_rate >= 50 ? 'green' : 'red'}">${k.combined.win_rate}%</span></div>
                   <div><span class="muted">Kelly rec:</span> <span style="color:var(--blue);font-weight:700">${k.combined.capped_pct}%</span></div>
+                  <div><span class="muted">Sharpe:</span> <span style="color:${k.combined.sharpe_ratio >= 1 ? 'var(--green)' : k.combined.sharpe_ratio >= 0 ? 'var(--blue)' : 'var(--red)'};font-weight:700">${k.combined.sharpe_ratio}</span></div>
                   <div><span class="muted">Status:</span> ${k.combined.status === 'active' ? '<span class="green">Active</span>' : `<span class="muted">${k.combined.trades_needed} to go</span>`}</div>
                 </div>
               </div>
