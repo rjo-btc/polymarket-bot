@@ -823,6 +823,8 @@
                 <div><span class="muted">Min price:</span> ${ep.min_entry_price > 0 ? ep.min_entry_price : 'none'}</div>
                 <div><span class="muted">Max price:</span> ${ep.max_entry_price < 1 ? ep.max_entry_price : 'none'}</div>
                 <div><span class="muted">EMA:</span> ${ep.enabled ? '<span class="green">ON</span>' : '<span class="red">OFF</span>'}</div>
+                <div><span class="muted">↑ weight:</span> ${ep.side_up_weight != null ? ep.side_up_weight : '1.0'}</div>
+                <div><span class="muted">↓ weight:</span> ${ep.side_down_weight != null ? ep.side_down_weight : '1.0'}</div>
               </div>
             </div>`;
 
@@ -846,6 +848,27 @@
                 <div style="font-weight:600;margin-bottom:6px">Win vs Loss Comparison</div>
                 ${compTable}
                 <div style="margin-top:10px">${stratHtml}</div>
+                ${a.entry_price_buckets && a.entry_price_buckets.length > 0 ? `
+                  <div style="margin-top:14px">
+                    <div style="font-weight:600;margin-bottom:6px">Entry Price R:R Analysis</div>
+                    <table style="font-size:0.82rem;width:100%">
+                      <thead><tr><th style="text-align:left">Bucket</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th><th>Max Payout</th></tr></thead>
+                      <tbody>
+                        ${a.entry_price_buckets.map(b => {
+                          const retColor = b.avg_return_pct > 30 ? 'var(--green)' : b.avg_return_pct > 10 ? 'var(--blue)' : b.avg_return_pct > 0 ? 'var(--muted)' : 'var(--red)';
+                          return `<tr>
+                            <td>${b.label} <span class="muted" style="font-size:0.7rem">(${b.range})</span></td>
+                            <td style="text-align:center">${b.trades} (${b.wins}W)</td>
+                            <td style="text-align:center;color:${b.win_rate >= 60 ? 'var(--green)' : b.win_rate >= 50 ? 'var(--blue)' : 'var(--red)'}">${b.win_rate}%</td>
+                            <td style="text-align:center;color:${retColor}">${b.avg_return_pct > 0 ? '+' : ''}${b.avg_return_pct}%</td>
+                            <td style="text-align:center">${b.avg_max_payout_pct}%</td>
+                          </tr>`;
+                        }).join('')}
+                      </tbody>
+                    </table>
+                    <div class="muted" style="font-size:0.72rem;margin-top:4px">Max entry cap: 0.65 · Entries above this have poor R:R</div>
+                  </div>
+                ` : ''}
               </div>
             </div>`;
         } catch (e) {
