@@ -27,6 +27,13 @@ async function resolveExpiredPositions() {
       postMortem = `LOSS REVIEW: Bought ${pos.side.toUpperCase()} @ ${pos.entry_price.toFixed(3)}, ` +
         `BTC start=${btcStart.toFixed(2)} end=${btcEnd.toFixed(2)} (${btcWentUp ? 'UP' : 'DOWN'}). ` +
         `Strategy: ${pos.strategy}. Stake lost: $${pos.stake_usd.toFixed(2)}`;
+    } else {
+      const returnPct = ((pnl / pos.stake_usd) * 100).toFixed(1);
+      const btcMoveBps = ((btcEnd - btcStart) / btcStart * 10000).toFixed(1);
+      postMortem = `WIN REVIEW: Bought ${pos.side.toUpperCase()} @ ${pos.entry_price.toFixed(3)}, ` +
+        `BTC start=${btcStart.toFixed(2)} end=${btcEnd.toFixed(2)} (${btcWentUp ? 'UP' : 'DOWN'}). ` +
+        `Strategy: ${pos.strategy}. Return: +${returnPct}% ($${pnl.toFixed(2)}). ` +
+        `BTC moved ${btcMoveBps} bps. Entry ${pos.seconds_to_end_at_entry}s before end.`;
     }
 
     resolvePosition.run({

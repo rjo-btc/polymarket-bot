@@ -124,6 +124,70 @@ function autoTune() {
       }
     }
   }
+
+  // === WIN OPTIMIZATION: Narrow toward winning entry window ===
+  // If wins cluster in a tighter time range, narrow the window to the sweet spot
+  if (win_stats && win_stats.count >= 3 && win_stats.avg_seconds_to_end != null) {
+    // Find the optimal entry window from wins — use their range as guide
+    const winMetrics = analysis.wins_detail || [];
+    if (winMetrics.length >= 3) {
+      const winSecs = winMetrics.map(m => m.seconds_to_end).filter(s => s != null).sort((a, b) => a - b);
+      if (winSecs.length >= 3) {
+        // Use p25-p75 of winning entries as ideal window
+        const p25 = winSecs[Math.floor(winSecs.length * 0.25)];
+        const p75 = winSecs[Math.floor(winSecs.length * 0.75)];
+        // Only narrow if the win cluster is tighter than current window
+        if (p25 > params.ema.entry_window_min && p25 < p75) {
+          const newMin = Math.max(params.ema.entry_window_min, Math.round(p25 - 5));
+          if (newMin > params.ema.entry_window_min) {
+            const old = params.ema.entry_window_min;
+            params.ema.entry_window_min = newMin;
+            params.session.entry_window_min = newMin;
+            log(`WIN OPT — Entry window min: ${old}s → ${newMin}s (wins cluster p25=${p25}s)`);
+          }
+        }
+      }
+    }
+  }
+
+  // === WIN OPTIMIZATION: Favor entry prices that produce best returns ===
+  if (win_stats && win_stats.count >= 3 && win_stats.avg_entry_price != null) {
+    const winMetrics = analysis.wins_detail || [];
+    if (winMetrics.length >= 3) {
+      // Find the entry price sweet spot — best pnl trades
+      const sorted = [...winMetrics].sort((a, b) => (b.pnl || 0) - (a.pnl || 0));
+      const topHalf = sorted.slice(0, Math.ceil(sorted.length / 2));
+      const topAvgEntry = topHalf.reduce((s, m) => s + m.entry_price, 0) / topHalf.length;
+      const bottomHalf = sorted.slice(Math.ceil(sorted.length / 2));
+      
+      if (bottomHalf.length > 0) {
+        const bottomAvgEntry = bottomHalf.reduce((s, m) => s + m.entry_price, 0) / bottomHalf.length;
+        // If best wins come from cheaper entries (higher payout), prefer those
+        if (topAvgEntry < bottomAvgEntry - 0.05) {
+          const idealMax = Math.round(((topAvgEntry + bottomAvgEntry) / 2 + 0.1) * 1000) / 1000;
+          if (idealMax < params.ema.max_entry_price && idealMax > 0.3) {
+            const old = params.ema.max_entry_price;
+            params.ema.max_entry_price = idealMax;
+            params.session.max_entry_price = idealMax;
+            log(`WIN OPT — Max entry price: ${old} → ${idealMax} (best wins avg entry ${topAvgEntry.toFixed(3)} vs weaker ${bottomAvgEntry.toFixed(3)})`);
+          }
+        }
+      }
+    }
+  }
+
+  // === WIN OPTIMIZATION: EMA distance sweet spot ===
+  if (win_stats && win_stats.count >= 3 && win_stats.avg_dist_bps != null) {
+    const winMetrics = analysis.wins_detail || [];
+    const winDists = winMetrics.map(m => m.dist_bps).filter(d => d != null);
+    if (winDists.length >= 3) {
+      // If best wins happen at a certain EMA distance range, log it
+      const sorted = [...winMetrics].filter(m => m.dist_bps != null).sort((a, b) => (b.pnl || 0) - (a.pnl || 0));
+      const topDists = sorted.slice(0, Math.ceil(sorted.length / 2)).map(m => m.dist_bps);
+      const avgTopDist = topDists.reduce((a, b) => a + b, 0) / topDists.length;
+      log(`WIN PROFILE — Best wins avg EMA dist: ${avgTopDist.toFixed(1)} bps (overall avg: ${win_stats.avg_dist_bps} bps)`);
+    }
+  }
 }
 
 function getParams() {

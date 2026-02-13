@@ -233,6 +233,8 @@ function runAnalysis() {
     win_rate: Math.round((wins.length / positions.length) * 1000) / 10,
     win_stats: winStats,
     loss_stats: lossStats,
+    wins_detail: wins,
+    losses_detail: losses,
     patterns,
     by_strategy: byStrategy,
     suggestions,
