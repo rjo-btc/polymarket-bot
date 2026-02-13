@@ -8,7 +8,7 @@ const params = {
   ema: {
     min_ema_dist_bps: 8,       // Minimum EMA distance to enter
     min_slope_abs: 0,           // Minimum absolute slope
-    max_entry_price: 1.0,       // Max entry price (1.0 = no filter)
+    max_entry_price: 0.65,      // Max entry price — data shows >0.65 has terrible R:R
     min_entry_price: 0.0,       // Min entry price (0.0 = no filter)
     entry_window_min: 90,       // Earliest entry (secs to end)
     entry_window_max: 180,      // Latest entry (secs to end)
@@ -19,7 +19,7 @@ const params = {
   },
   session: {
     min_slope_abs: 0,
-    max_entry_price: 1.0,
+    max_entry_price: 0.65,
     min_entry_price: 0.0,
     entry_window_min: 90,
     entry_window_max: 180,

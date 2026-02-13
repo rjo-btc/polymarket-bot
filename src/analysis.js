@@ -226,6 +226,32 @@ function runAnalysis() {
     }
   }
 
+  // Entry price bucket analysis for R:R optimization
+  const buckets = [
+    { label: 'cheap', min: 0, max: 0.5 },
+    { label: 'mid', min: 0.5, max: 0.65 },
+    { label: 'expensive', min: 0.65, max: 1.0 },
+  ];
+  const entryPriceBuckets = buckets.map(b => {
+    const bucket = metrics.filter(m => m.entry_price >= b.min && m.entry_price < b.max);
+    const bWins = bucket.filter(m => m.won);
+    const avgReturn = bucket.length > 0
+      ? bucket.reduce((s, m) => s + (m.pnl / (m.stake_usd || 1)), 0) / bucket.length * 100
+      : 0;
+    const avgMaxPayout = bucket.length > 0
+      ? bucket.reduce((s, m) => s + ((1 / m.entry_price - 1) * 100), 0) / bucket.length
+      : 0;
+    return {
+      label: b.label,
+      range: `${b.min}-${b.max}`,
+      trades: bucket.length,
+      wins: bWins.length,
+      win_rate: bucket.length > 0 ? Math.round((bWins.length / bucket.length) * 1000) / 10 : 0,
+      avg_return_pct: Math.round(avgReturn * 10) / 10,
+      avg_max_payout_pct: Math.round(avgMaxPayout * 10) / 10,
+    };
+  }).filter(b => b.trades > 0);
+
   return {
     total_trades: positions.length,
     wins: wins.length,
@@ -235,6 +261,7 @@ function runAnalysis() {
     loss_stats: lossStats,
     wins_detail: wins,
     losses_detail: losses,
+    entry_price_buckets: entryPriceBuckets,
     patterns,
     by_strategy: byStrategy,
     suggestions,
