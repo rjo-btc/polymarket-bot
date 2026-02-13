@@ -1,11 +1,25 @@
 const { findCurrentMarket, fetchTokenPrices } = require('./market');
 const { getBtcPrice } = require('./btcPrice');
-const { insertPosition, insertDecision, pruneDecisions, getOpenPositions } = require('./db');
+const { insertPosition, insertDecision, pruneDecisions, getOpenPositions, getAllPositions } = require('./db');
 const emaStrategy = require('./strategies/ema');
 const sessionStrategy = require('./strategies/session');
 const { resolveExpiredPositions } = require('./resolver');
 
-const CAPITAL_PER_TRADE = parseFloat(process.env.CAPITAL_PER_TRADE_USD) || 50;
+const RISK_PCT = parseFloat(process.env.RISK_PCT) || 7; // % of current capital per trade
+const CAPITAL_START = parseFloat(process.env.CAPITAL_START_USD) || 1000;
+
+function getCurrentCapital() {
+  const positions = getAllPositions.all();
+  const resolved = positions.filter(p => p.status === 'resolved');
+  const totalPnl = resolved.reduce((s, p) => s + (p.pnl || 0), 0);
+  return CAPITAL_START + totalPnl;
+}
+
+function getStakeSize() {
+  const capital = getCurrentCapital();
+  return Math.round(capital * (RISK_PCT / 100) * 100) / 100;
+}
+
 let running = false;
 let loopInterval = null;
 
@@ -64,7 +78,8 @@ async function traderLoop() {
                 ? (prices.up || 0.5)
                 : (prices.down || 0.5);
 
-              const shares = CAPITAL_PER_TRADE / entryPrice;
+              const stakeUsd = getStakeSize();
+              const shares = stakeUsd / entryPrice;
               const secsToEnd = Math.floor((market.endMs - Date.now()) / 1000);
 
               insertPosition.run({
@@ -72,7 +87,7 @@ async function traderLoop() {
                 market_title: market.title,
                 strategy: decision.strategy,
                 side: decision.side,
-                stake_usd: CAPITAL_PER_TRADE,
+                stake_usd: stakeUsd,
                 shares: Math.round(shares * 100) / 100,
                 entry_price: entryPrice,
                 entered_at: new Date().toISOString(),

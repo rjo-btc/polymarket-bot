@@ -11,7 +11,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const PORT = process.env.PORT || 3000;
 const CAPITAL_START = parseFloat(process.env.CAPITAL_START_USD) || 1000;
-const CAPITAL_PER_TRADE = parseFloat(process.env.CAPITAL_PER_TRADE_USD) || 50;
+const RISK_PCT = parseFloat(process.env.RISK_PCT) || 7;
 
 // Cache for BTC price at market start
 const marketStartPrices = new Map();
@@ -176,7 +176,7 @@ app.get('/api/summary', (req, res) => {
 
     res.json({
       capital_start_usd: CAPITAL_START,
-      capital_per_trade_usd: CAPITAL_PER_TRADE,
+      capital_per_trade_usd: Math.round((CAPITAL_START + totalPnl) * (RISK_PCT / 100) * 100) / 100,
       total_capital_usd: Math.round((CAPITAL_START + totalPnl) * 100) / 100,
       total_pnl_usd: Math.round(totalPnl * 100) / 100,
       total_stake_usd: Math.round(totalStake * 100) / 100,
