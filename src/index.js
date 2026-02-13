@@ -192,6 +192,75 @@ app.get('/api/summary', (req, res) => {
   }
 });
 
+app.get('/api/kelly', (req, res) => {
+  try {
+    const positions = getAllPositions.all();
+    const resolved = positions.filter(p => p.status === 'resolved');
+    const totalPnl = resolved.reduce((s, p) => s + (p.pnl || 0), 0);
+    const currentCapital = CAPITAL_START + totalPnl;
+    const MIN_TRADES = 30;
+    const MAX_RISK = 0.20;
+
+    function calcKelly(trades) {
+      const n = trades.length;
+      const wins = trades.filter(p => p.pnl > 0);
+      const losses = trades.filter(p => p.pnl <= 0);
+      const winRate = n > 0 ? wins.length / n : 0;
+
+      // Average payout ratio for wins: (1/entry_price - 1)
+      const payouts = wins.map(p => (1 / p.entry_price) - 1).filter(x => isFinite(x) && x > 0);
+      const avgPayout = payouts.length > 0 ? payouts.reduce((a, b) => a + b, 0) / payouts.length : 1;
+
+      const fullKelly = avgPayout > 0 ? (avgPayout * winRate - (1 - winRate)) / avgPayout : 0;
+      const halfKelly = Math.max(0, fullKelly / 2);
+      const confidence = Math.min(1, Math.sqrt(n / MIN_TRADES));
+      const adjusted = halfKelly * confidence;
+      const capped = Math.min(adjusted, MAX_RISK);
+
+      return {
+        n,
+        wins: wins.length,
+        losses: losses.length,
+        win_rate: Math.round(winRate * 1000) / 10,
+        avg_payout_ratio: Math.round(avgPayout * 1000) / 1000,
+        avg_entry_price: n > 0 ? Math.round((trades.reduce((s, p) => s + p.entry_price, 0) / n) * 1000) / 1000 : null,
+        full_kelly_pct: Math.round(Math.max(0, fullKelly) * 1000) / 10,
+        half_kelly_pct: Math.round(halfKelly * 1000) / 10,
+        confidence: Math.round(confidence * 1000) / 10,
+        adjusted_pct: Math.round(adjusted * 1000) / 10,
+        capped_pct: Math.round(capped * 1000) / 10,
+        status: n >= MIN_TRADES ? 'active' : 'collecting_data',
+        trades_needed: Math.max(0, MIN_TRADES - n),
+      };
+    }
+
+    // Per strategy
+    const strategies = {};
+    const stratGroups = {};
+    for (const p of resolved) {
+      if (!stratGroups[p.strategy]) stratGroups[p.strategy] = [];
+      stratGroups[p.strategy].push(p);
+    }
+    for (const [strat, trades] of Object.entries(stratGroups)) {
+      strategies[strat] = calcKelly(trades);
+    }
+
+    // Combined
+    const combined = calcKelly(resolved);
+
+    res.json({
+      current_capital: Math.round(currentCapital * 100) / 100,
+      current_risk_pct: RISK_PCT,
+      max_risk_cap_pct: MAX_RISK * 100,
+      min_trades_threshold: MIN_TRADES,
+      strategies,
+      combined,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/decisions', (req, res) => {
   try {
     const decisions = getRecentDecisions.all();
