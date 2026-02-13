@@ -247,9 +247,9 @@
               <div class="muted tiny" id="maxDrawdownMeta"></div>
             </div>
             <div class="stat">
-              <div class="label">Best trade</div>
-              <div class="value green" id="maxGain">-</div>
-              <div class="muted tiny" id="maxGainMeta"></div>
+              <div class="label">Total return</div>
+              <div class="value" id="totalReturn">-</div>
+              <div class="muted tiny" id="totalReturnMeta"></div>
             </div>
           </div>
         </section>
@@ -472,11 +472,12 @@
         $('maxDrawdown').textContent = s.max_drawdown_usd != null ? '-' + fmtUsd(s.max_drawdown_usd) : '-';
         $('maxDrawdownMeta').textContent = s.max_drawdown_usd > 0 ? ((s.max_drawdown_usd / CAPITAL_START * 100).toFixed(1) + '% of start') : '';
 
-        // Best trade
-        if (s.best_trade) {
-          $('maxGain').textContent = '+' + fmtUsd(s.best_trade.pnl);
-          $('maxGainMeta').textContent = '#' + s.best_trade.id + ' ' + s.best_trade.side.toUpperCase() + ' (+' + s.best_trade.return_pct + '%)';
-        }
+        // Total return
+        const returnPct = ((s.total_capital_usd - CAPITAL_START) / CAPITAL_START * 100).toFixed(1);
+        const returnPositive = s.total_capital_usd >= CAPITAL_START;
+        $('totalReturn').textContent = (returnPositive ? '+' : '') + returnPct + '%';
+        $('totalReturn').className = 'value ' + (returnPositive ? 'green' : 'red');
+        $('totalReturnMeta').textContent = fmtUsd(CAPITAL_START) + ' → ' + fmtUsd(s.total_capital_usd);
 
         renderStrategySummary(s.by_strategy || []);
       }
