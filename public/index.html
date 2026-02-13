@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Polymarket BTC 5m Paper Trader</title>
+    <title>PolyBot</title>
     <style>
       :root {
         color-scheme: dark;
@@ -181,16 +181,18 @@
   </head>
   <body>
     <div class="wrap">
-      <div style="display:flex;align-items:center;gap:12px;">
-        <h1 style="margin:0;">Polymarket BTC 5m Paper Trader</h1>
-        <span id="botStatus" title="Bot status" style="display:inline-flex;align-items:center;gap:6px;font-size:.8rem;padding:3px 10px;border-radius:20px;background:rgba(255,255,255,.06);border:1px solid var(--border);">
-          <span id="botDot" style="width:10px;height:10px;border-radius:50%;background:#666;display:inline-block;"></span>
+      <header style="display:flex;align-items:center;justify-content:space-between;padding-bottom:14px;border-bottom:1px solid var(--border);margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <h1 style="margin:0;font-size:1.6rem;font-weight:800;letter-spacing:-0.5px;">
+            <span style="background:linear-gradient(135deg,#59a2ff,#1dd49a);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">PolyBot</span>
+          </h1>
+          <span style="color:var(--muted);font-size:.8rem;opacity:.6;">BTC 5m · Paper</span>
+        </div>
+        <span id="botStatus" title="Bot status" style="display:inline-flex;align-items:center;gap:6px;font-size:.78rem;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid var(--border);backdrop-filter:blur(4px);">
+          <span id="botDot" style="width:8px;height:8px;border-radius:50%;background:#666;display:inline-block;box-shadow:0 0 6px rgba(102,102,102,.4);"></span>
           <span id="botLabel" style="color:var(--muted);">Loading...</span>
         </span>
-      </div>
-      <div class="muted" style="margin-top:4px;">
-        Logs: time-to-end at entry, entry price, BTC now, BTC at market start, and PnL.
-      </div>
+      </header>
 
       <div class="grid">
         <section class="card market-card">
