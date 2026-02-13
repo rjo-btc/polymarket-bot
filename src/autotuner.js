@@ -12,6 +12,9 @@ const params = {
     min_entry_price: 0.0,       // Min entry price (0.0 = no filter)
     entry_window_min: 90,       // Earliest entry (secs to end)
     entry_window_max: 180,      // Latest entry (secs to end)
+    side_bias: null,            // null = no bias, 'up' or 'down' = only trade that side
+    side_up_weight: 1.0,        // 0-1 multiplier for UP trades (1.0 = full, 0 = disabled)
+    side_down_weight: 1.0,      // 0-1 multiplier for DOWN trades
     enabled: true,
   },
   session: {
@@ -20,6 +23,9 @@ const params = {
     min_entry_price: 0.0,
     entry_window_min: 90,
     entry_window_max: 180,
+    side_bias: null,
+    side_up_weight: 1.0,
+    side_down_weight: 1.0,
     enabled: true,
   },
 };
@@ -176,16 +182,73 @@ function autoTune() {
     }
   }
 
-  // === WIN OPTIMIZATION: EMA distance sweet spot ===
+  // === WIN OPTIMIZATION: EMA distance sweet spot (active adjustment) ===
   if (win_stats && win_stats.count >= 3 && win_stats.avg_dist_bps != null) {
     const winMetrics = analysis.wins_detail || [];
-    const winDists = winMetrics.map(m => m.dist_bps).filter(d => d != null);
+    const winDists = winMetrics.filter(m => m.dist_bps != null);
     if (winDists.length >= 3) {
-      // If best wins happen at a certain EMA distance range, log it
-      const sorted = [...winMetrics].filter(m => m.dist_bps != null).sort((a, b) => (b.pnl || 0) - (a.pnl || 0));
-      const topDists = sorted.slice(0, Math.ceil(sorted.length / 2)).map(m => m.dist_bps);
-      const avgTopDist = topDists.reduce((a, b) => a + b, 0) / topDists.length;
-      log(`WIN PROFILE — Best wins avg EMA dist: ${avgTopDist.toFixed(1)} bps (overall avg: ${win_stats.avg_dist_bps} bps)`);
+      const sorted = [...winDists].sort((a, b) => (b.pnl || 0) - (a.pnl || 0));
+      const topHalf = sorted.slice(0, Math.ceil(sorted.length / 2));
+      const avgTopDist = topHalf.reduce((s, m) => s + m.dist_bps, 0) / topHalf.length;
+      const allAvgDist = winDists.reduce((s, m) => s + m.dist_bps, 0) / winDists.length;
+
+      // If best wins cluster at a higher EMA distance, raise the minimum toward it
+      if (avgTopDist > allAvgDist + 1 && avgTopDist > params.ema.min_ema_dist_bps) {
+        // Set min to midpoint between current and top-win average (gradual)
+        const newMin = Math.round(((params.ema.min_ema_dist_bps + avgTopDist) / 2) * 10) / 10;
+        if (newMin > params.ema.min_ema_dist_bps) {
+          const old = params.ema.min_ema_dist_bps;
+          params.ema.min_ema_dist_bps = newMin;
+          log(`WIN OPT — EMA dist threshold: ${old} → ${newMin} bps (best wins avg ${avgTopDist.toFixed(1)} bps)`);
+        }
+      }
+      log(`WIN PROFILE — Best wins avg EMA dist: ${avgTopDist.toFixed(1)} bps (overall win avg: ${allAvgDist.toFixed(1)} bps)`);
+    }
+  }
+
+  // === SIDE BIAS: Adjust weights based on win rate per side ===
+  const allMetrics = [...(analysis.wins_detail || []), ...(analysis.losses_detail || [])];
+  if (allMetrics.length >= 6) {
+    const upTrades = allMetrics.filter(m => m.side === 'up');
+    const downTrades = allMetrics.filter(m => m.side === 'down');
+    const upWins = upTrades.filter(m => m.won).length;
+    const downWins = downTrades.filter(m => m.won).length;
+    const upWinRate = upTrades.length >= 3 ? upWins / upTrades.length : null;
+    const downWinRate = downTrades.length >= 3 ? downWins / downTrades.length : null;
+
+    if (upWinRate != null && downWinRate != null) {
+      const gap = Math.abs(upWinRate - downWinRate);
+
+      if (gap >= 0.25) {
+        // Strong bias — heavily reduce the weaker side
+        const weakSide = upWinRate < downWinRate ? 'up' : 'down';
+        const strongSide = weakSide === 'up' ? 'down' : 'up';
+        const weakRate = Math.min(upWinRate, downWinRate);
+        const strongRate = Math.max(upWinRate, downWinRate);
+
+        // Weight = weak side win rate / strong side win rate (proportional)
+        const newWeight = Math.round(Math.max(0.2, weakRate / strongRate) * 100) / 100;
+        const weightKey = `side_${weakSide}_weight`;
+        const strongKey = `side_${strongSide}_weight`;
+
+        if (params.ema[weightKey] !== newWeight) {
+          const old = params.ema[weightKey];
+          params.ema[weightKey] = newWeight;
+          params.session[weightKey] = newWeight;
+          params.ema[strongKey] = 1.0;
+          params.session[strongKey] = 1.0;
+          log(`SIDE BIAS — ${weakSide.toUpperCase()} weight: ${old} → ${newWeight} (${weakSide} WR ${(weakRate * 100).toFixed(0)}% vs ${strongSide} WR ${(strongRate * 100).toFixed(0)}%)`);
+        }
+      } else if (gap < 0.1) {
+        // No meaningful bias — reset weights
+        if (params.ema.side_up_weight !== 1.0 || params.ema.side_down_weight !== 1.0) {
+          params.ema.side_up_weight = 1.0;
+          params.ema.side_down_weight = 1.0;
+          params.session.side_up_weight = 1.0;
+          params.session.side_down_weight = 1.0;
+          log(`SIDE BIAS — Reset to neutral (UP WR ${(upWinRate * 100).toFixed(0)}% ≈ DOWN WR ${(downWinRate * 100).toFixed(0)}%)`);
+        }
+      }
     }
   }
 }

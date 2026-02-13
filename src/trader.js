@@ -132,6 +132,17 @@ async function traderLoop() {
                 continue;
               }
 
+              // Apply side bias from auto-tuner
+              const sideWeight = decision.side === 'up' ? (tp.side_up_weight ?? 1.0) : (tp.side_down_weight ?? 1.0);
+              if (sideWeight < 1.0) {
+                // Probabilistic filter — skip trade (1 - weight)% of the time
+                if (Math.random() > sideWeight) {
+                  console.log(`[Trader] ${decision.strategy.toUpperCase()} SIDE BIAS SKIP: ${decision.side.toUpperCase()} weight ${sideWeight} (rolled skip)`);
+                  continue;
+                }
+                console.log(`[Trader] ${decision.strategy.toUpperCase()} SIDE BIAS PASS: ${decision.side.toUpperCase()} weight ${sideWeight} (rolled enter)`);
+              }
+
               const stakeUsd = getStakeSize();
               const shares = stakeUsd / entryPrice;
               const secsToEnd = Math.floor((market.endMs - Date.now()) / 1000);
