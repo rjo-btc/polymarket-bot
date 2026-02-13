@@ -41,11 +41,23 @@ function loadParams() {
     const row = kvGet.get(PARAMS_KEY);
     if (row) {
       const saved = JSON.parse(row.value);
-      // Merge saved over defaults (so new fields get defaults)
+      // Merge: use MAX of saved vs default for filter params (they should only get tighter, never looser)
       const merged = JSON.parse(JSON.stringify(defaults));
+      const filterMaxKeys = ['min_ema_dist_bps', 'min_slope_abs', 'min_entry_price', 'entry_window_min'];
+      const filterMinKeys = ['max_entry_price', 'entry_window_max'];
       for (const strat of Object.keys(merged)) {
         if (saved[strat]) {
-          Object.assign(merged[strat], saved[strat]);
+          for (const [k, v] of Object.entries(saved[strat])) {
+            if (filterMaxKeys.includes(k)) {
+              // Take the stricter (higher) value
+              merged[strat][k] = Math.max(merged[strat][k] || 0, v || 0);
+            } else if (filterMinKeys.includes(k)) {
+              // Take the stricter (lower) value
+              merged[strat][k] = Math.min(merged[strat][k] || 1, v || 1);
+            } else {
+              merged[strat][k] = v;
+            }
+          }
         }
       }
       return merged;
