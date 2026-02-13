@@ -1,0 +1,14 @@
+{
+  "name": "polymarket-btc-5m-paper-trader",
+  "version": "1.0.0",
+  "description": "Paper trading bot for Polymarket BTC 5-minute up/down markets",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "express": "^4.21.0"
+  }
+}

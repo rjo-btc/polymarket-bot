@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Polymarket BTC 5m Paper Trader</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1020;
+        --card: #121933;
+        --card-soft: #171f3d;
+        --text: #ecf1ff;
+        --muted: #9ca9d3;
+        --green: #1dd49a;
+        --red: #ff5c8a;
+        --blue: #59a2ff;
+        --border: #29345f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: radial-gradient(circle at top, #172349, var(--bg) 45%);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica,
+          Arial, sans-serif;
+      }
+
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 1.45rem;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(12, 1fr);
+        margin-top: 16px;
+      }
+
+      .card {
+        background: linear-gradient(180deg, var(--card), var(--card-soft));
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px;
+      }
+
+      .market-card {
+        grid-column: span 12;
+      }
+
+      .trade-card {
+        display: none;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .stat {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px;
+      }
+
+      .label {
+        font-size: 0.75rem;
+        color: var(--muted);
+        margin-bottom: 5px;
+      }
+
+      .value {
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      input,
+      select,
+      button {
+        width: 100%;
+        padding: 10px 11px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #0d1430;
+        color: var(--text);
+      }
+
+      button {
+        cursor: pointer;
+        border: 0;
+        background: linear-gradient(180deg, #5ca9ff, #2a76df);
+        font-weight: 700;
+        margin-top: 6px;
+      }
+
+      .form-grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .msg {
+        margin-top: 10px;
+        font-size: 0.85rem;
+        min-height: 18px;
+      }
+
+      .green {
+        color: var(--green);
+      }
+
+      .red {
+        color: var(--red);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        font-size: 0.9rem;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 9px 8px;
+        border-bottom: 1px solid #223056;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .badge {
+        padding: 3px 7px;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+
+      .tiny {
+        font-size: 0.72rem;
+      }
+
+      @media (max-width: 900px) {
+        .market-card {
+          grid-column: span 12;
+        }
+
+        .stats {
+          grid-template-columns: 1fr;
+        }
+
+        table {
+          font-size: 0.82rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Polymarket BTC 5m Paper Trader</h1>
+      <div class="muted">
+        Logs: time-to-end at entry, entry price, BTC now, BTC at market start, and PnL.
+      </div>
+
+      <div class="grid">
+        <section class="card market-card">
+          <div id="marketTitle" style="font-size: 1.05rem; font-weight: 700">Loading market...</div>
+          <div class="muted tiny" id="marketMeta"></div>
+
+          <div class="stats">
+            <div class="stat">
+              <div class="label">Up price</div>
+              <div class="value" id="upPrice">-</div>
+            </div>
+            <div class="stat">
+              <div class="label">Down price</div>
+              <div class="value" id="downPrice">-</div>
+            </div>
+            <div class="stat">
+              <div class="label">Time to end</div>
+              <div class="value" id="timeToEnd">-</div>
+            </div>
+            <div class="stat">
+              <div class="label">BTC now (Chainlink)</div>
+              <div class="value" id="btcNow">-</div>
+              <div class="muted tiny"></div>
+            </div>
+            <div class="stat">
+              <div class="label">BTC @ market start</div>
+              <div class="value" id="btcStart">-</div>
+            </div>
+            <div class="stat">
+              <div class="label">Resolution source</div>
+              <div class="value tiny" id="source">-</div>
+            </div>
+            <div class="stat">
+              <div class="label">Total PnL</div>
+              <div class="value" id="totalPnl">-</div>
+            </div>
+            <div class="stat">
+              <div class="label">Total capital</div>
+              <div class="value" id="totalCapital">-</div>
+            </div>
+            <div class="stat">
+              <div class="label">Capital / trade</div>
+              <div class="value" id="capitalPerTrade">-</div>
+            </div>
+            <div class="stat">
+              <div class="label">Win rate</div>
+              <div class="value" id="winRate">-</div>
+              <div class="muted tiny" id="winRateMeta"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card trade-card">
+          <div style="font-weight: 700; margin-bottom: 10px">Open paper position</div>
+          <form id="tradeForm" class="form-grid">
+            <div>
+              <div class="label">Side</div>
+              <select id="side" required>
+                <option value="up">Up</option>
+                <option value="down">Down</option>
+              </select>
+            </div>
+
+            <div>
+              <div class="label">Stake (USD)</div>
+              <input id="stake" type="number" min="0.01" step="0.01" placeholder="100" required />
+            </div>
+
+            <div>
+              <div class="label">Entry price override (optional)</div>
+              <input id="entryPrice" type="number" min="0.001" max="1" step="0.001" placeholder="auto" />
+            </div>
+
+            <div>
+              <div class="label">Reason (required)</div>
+              <input id="reason" type="text" placeholder="Why this entry?" required />
+            </div>
+
+            <button type="submit">Place paper trade</button>
+          </form>
+          <div class="msg" id="tradeMsg"></div>
+        </section>
+      </div>
+
+      <section class="card" style="margin-top: 14px">
+        <div style="font-weight: 700; margin-bottom: 6px">Strategy comparison (paper)</div>
+        <div class="muted tiny">EMA vs session/time strategy performance</div>
+        <div style="overflow-x: auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Strategy</th>
+                <th>Trades</th>
+                <th>Resolved</th>
+                <th>Wins</th>
+                <th>Losses</th>
+                <th>Win rate</th>
+                <th>Total stake</th>
+                <th>Total PnL</th>
+              </tr>
+            </thead>
+            <tbody id="strategySummaryBody">
+              <tr>
+                <td colspan="8" class="muted">No strategy stats yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top: 14px">
+        <div style="font-weight: 700; margin-bottom: 6px">Positions</div>
+        <div style="overflow-x: auto">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Strategy</th>
+                <th>Side</th>
+                <th>Entered</th>
+                <th>Time to end @ entry</th>
+                <th>Entry price</th>
+                <th>BTC @ entry</th>
+                <th>BTC @ market start</th>
+                <th>BTC @ end</th>
+                <th>Reason</th>
+                <th>BTC now</th>
+                <th>Mark</th>
+                <th>PnL</th>
+                <th>Status</th>
+                <th>Post mortem (loss)</th>
+              </tr>
+            </thead>
+            <tbody id="positionsBody">
+              <tr>
+                <td colspan="15" class="muted">No positions yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top: 14px">
+        <div style="font-weight: 700; margin-bottom: 6px">Auto-trader decisions</div>
+        <div class="muted tiny">Why the bot did / didn’t enter a trade</div>
+        <div style="overflow-x: auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Checked</th>
+                <th>Strategy</th>
+                <th>Market</th>
+                <th>Secs to end</th>
+                <th>Action</th>
+                <th>Side</th>
+                <th>Session</th>
+                <th>Dist</th>
+                <th>Slope</th>
+                <th>Trigger</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody id="decisionsBody">
+              <tr>
+                <td colspan="11" class="muted">No decisions yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let latestMarket = null;
+      let marketFetchInFlight = false;
+      let panelsFetchInFlight = false;
+
+      const fmtUsd = (n) => (n == null ? '-' : '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 }));
+      const fmtPrice = (n) => (n == null ? '-' : Number(n).toFixed(4));
+      const fmtProb = (n) => (n == null ? '-' : Number(n).toFixed(3));
+
+      const fmtDuration = (seconds) => {
+        if (seconds == null) return '-';
+        const sign = seconds < 0 ? '-' : '';
+        let s = Math.abs(Math.floor(seconds));
+        const h = Math.floor(s / 3600);
+        s -= h * 3600;
+        const m = Math.floor(s / 60);
+        s -= m * 60;
+        return `${sign}${h}h ${m}m ${s}s`;
+      };
+
+      function setMsg(text, ok = true) {
+        const el = $('tradeMsg');
+        el.textContent = text || '';
+        el.className = 'msg ' + (ok ? 'green' : 'red');
+      }
+
+      async function fetchJSON(url, opts = {}) {
+        const res = await fetch(url, opts);
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error || `HTTP ${res.status}`);
+        }
+        return data;
+      }
+
+      function renderMarket(m) {
+        latestMarket = m;
+        $('marketTitle').textContent = m.title;
+        $('marketMeta').textContent = `${m.market_slug} • ${new Date(m.market_start_at).toLocaleString()} → ${new Date(m.market_end_at).toLocaleString()}`;
+        $('upPrice').textContent = fmtProb(m.up_price);
+        $('downPrice').textContent = fmtProb(m.down_price);
+        $('btcNow').textContent = fmtPrice(m.btc_price_now);
+        $('btcStart').textContent = fmtPrice(m.btc_price_at_market_start);
+        $('source').textContent = m.resolution_source || '-';
+        updateLiveMarketClock();
+      }
+
+      function updateLiveMarketClock() {
+        if (!latestMarket) return;
+
+        const nowSec = Math.floor(Date.now() / 1000);
+        const marketEndMs = Date.parse(latestMarket.market_end_at);
+        if (!Number.isNaN(marketEndMs)) {
+          const secsToEnd = Math.floor(marketEndMs / 1000) - nowSec;
+          $('timeToEnd').textContent = fmtDuration(secsToEnd);
+        } else {
+          $('timeToEnd').textContent = fmtDuration(latestMarket.seconds_to_end);
+        }
+
+        $('btcNow').textContent = fmtPrice(latestMarket.btc_price_now);
+      }
+
+      function renderSummary(s) {
+        $('totalPnl').textContent = fmtUsd(s.total_pnl_usd);
+        $('totalPnl').className = `value ${s.total_pnl_usd >= 0 ? 'green' : 'red'}`;
+        $('totalCapital').textContent = fmtUsd(s.total_capital_usd);
+        $('capitalPerTrade').textContent = fmtUsd(s.capital_per_trade_usd);
+
+        const resolved = Number(s.resolved_trades || 0);
+        const wins = Number(s.winning_trades || 0);
+        const rate = resolved > 0 ? (wins / resolved) * 100 : null;
+        $('winRate').textContent = rate == null ? '-' : `${rate.toFixed(1)}%`;
+        $('winRateMeta').textContent = resolved > 0 ? `${wins}/${resolved} wins` : '';
+        $('winRate').className = `value ${rate == null ? '' : (rate >= 50 ? 'green' : 'red')}`;
+
+        renderStrategySummary(s.by_strategy || []);
+      }
+
+      function renderStrategySummary(rows) {
+        const body = $('strategySummaryBody');
+        if (!rows || rows.length === 0) {
+          body.innerHTML = '<tr><td colspan="8" class="muted">No strategy stats yet.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = rows
+          .map((r) => {
+            const wr = r.win_rate_pct == null ? '-' : `${Number(r.win_rate_pct).toFixed(1)}%`;
+            return `
+              <tr>
+                <td>${(r.strategy || '-').toUpperCase()}</td>
+                <td>${r.total_trades ?? 0}</td>
+                <td>${r.resolved_trades ?? 0}</td>
+                <td>${r.winning_trades ?? 0}</td>
+                <td>${r.losing_trades ?? 0}</td>
+                <td>${wr}</td>
+                <td>${fmtUsd(r.total_stake_usd)}</td>
+                <td class="${pnlClass(r.total_pnl_usd)}">${fmtUsd(r.total_pnl_usd)}</td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+
+      function pnlClass(v) {
+        if (v == null) return '';
+        return v >= 0 ? 'green' : 'red';
+      }
+
+      function renderPositions(rows) {
+        const body = $('positionsBody');
+        if (!rows || rows.length === 0) {
+          body.innerHTML = '<tr><td colspan="15" class="muted">No positions yet.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = rows
+          .map((p) => {
+            const pnlTxt = p.pnl == null ? '-' : `${fmtUsd(p.pnl)} (${(p.pnl_pct || 0).toFixed(2)}%)`;
+            return `
+              <tr>
+                <td>${p.id}</td>
+                <td>${(p.strategy || '-').toUpperCase()}</td>
+                <td>${p.side.toUpperCase()}</td>
+                <td>${new Date(p.entered_at).toLocaleTimeString()}</td>
+                <td>${fmtDuration(p.seconds_to_end_at_entry)}</td>
+                <td>${fmtProb(p.entry_price)}</td>
+                <td>${fmtPrice(p.btc_price_at_entry)}</td>
+                <td>${fmtPrice(p.btc_price_at_start)}</td>
+                <td>${fmtPrice(p.btc_price_at_end)}</td>
+                <td class="tiny">${(p.entry_reason || '-')}</td>
+                <td>${fmtPrice(p.btc_price_now)}</td>
+                <td>${fmtProb(p.mark_price)}</td>
+                <td class="${pnlClass(p.pnl)}">${pnlTxt}</td>
+                <td><span class="badge">${p.status}</span></td>
+                <td class="tiny">${(p.post_mortem || '-')}</td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+
+      function parseDecisionReason(reasonRaw) {
+        const reason = reasonRaw || '';
+        const paStart = reason.indexOf('PA[');
+        if (paStart === -1) {
+          return { base: reason || '-', pa: {} };
+        }
+
+        const paEnd = reason.indexOf(']', paStart);
+        if (paEnd === -1) {
+          return { base: reason || '-', pa: {} };
+        }
+
+        const paBody = reason.slice(paStart + 3, paEnd);
+        const pa = {};
+        paBody.split(',').forEach((part) => {
+          const idx = part.indexOf('=');
+          if (idx === -1) return;
+          const key = part.slice(0, idx).trim();
+          const value = part.slice(idx + 1).trim();
+          pa[key] = value;
+        });
+
+        const base = reason.slice(0, paStart).replace(/;\s*$/, '').trim() || reason;
+        return { base, pa };
+      }
+
+      function renderDecisions(rows) {
+        const body = $('decisionsBody');
+        if (!rows || rows.length === 0) {
+          body.innerHTML = '<tr><td colspan="11" class="muted">No decisions yet.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = rows
+          .map((d) => {
+            const when = d.last_checked_at ? new Date(d.last_checked_at).toLocaleTimeString() : '-';
+            const side = d.side ? d.side.toUpperCase() : '-';
+            const action = d.action || '-';
+            const actionClass = action === 'ENTER' ? 'green' : 'muted';
+            const slug = d.market_slug || '-';
+            const strategy = (d.strategy || '-').toUpperCase();
+
+            const parsed = parseDecisionReason(d.reason || '');
+            const pa = parsed.pa || {};
+
+            const distFallback = (d.reason || '').match(/dist\s([0-9.]+\sbps)/i)?.[1];
+            const slopeFallback = (d.reason || '').match(/slope\s([+-]?[0-9.]+)/i)?.[1];
+
+            const session = pa.session || '-';
+            const dist = pa.dist || distFallback || '-';
+            const slope = pa.slope || slopeFallback || '-';
+
+            const triggerParts = [];
+            if (pa.confirmUp) triggerParts.push(`cUp:${pa.confirmUp}`);
+            if (pa.confirmDown) triggerParts.push(`cDn:${pa.confirmDown}`);
+            if (pa.volExpand) triggerParts.push(`vol:${pa.volExpand}`);
+            if (pa.atrExpand) triggerParts.push(`atrEx:${pa.atrExpand}`);
+            if (pa.atrContract) triggerParts.push(`atrCt:${pa.atrContract}`);
+            const trigger = triggerParts.length ? triggerParts.join(' | ') : '-';
+
+            return `
+              <tr>
+                <td>${when}</td>
+                <td>${strategy}</td>
+                <td class="tiny">${slug}</td>
+                <td>${d.seconds_to_end}</td>
+                <td class="${actionClass}">${action}</td>
+                <td>${side}</td>
+                <td>${session}</td>
+                <td>${dist}</td>
+                <td>${slope}</td>
+                <td class="tiny">${trigger}</td>
+                <td class="tiny">${parsed.base || '-'}</td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+
+      async function refreshMarket() {
+        if (marketFetchInFlight) return;
+        marketFetchInFlight = true;
+        try {
+          const market = await fetchJSON('/api/market');
+          renderMarket(market);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          marketFetchInFlight = false;
+        }
+      }
+
+      async function refreshPanels() {
+        if (panelsFetchInFlight) return;
+        panelsFetchInFlight = true;
+        try {
+          const [positions, summary, decisions] = await Promise.all([
+            fetchJSON('/api/positions'),
+            fetchJSON('/api/summary'),
+            fetchJSON('/api/decisions'),
+          ]);
+          renderPositions(positions);
+          renderSummary(summary);
+          renderDecisions(decisions);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          panelsFetchInFlight = false;
+        }
+      }
+
+      async function refreshAll() {
+        await Promise.all([refreshMarket(), refreshPanels()]);
+      }
+
+      $('tradeForm').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        setMsg('');
+        try {
+          const side = $('side').value;
+          const stake = Number($('stake').value);
+          const entryRaw = $('entryPrice').value.trim();
+          const reason = $('reason').value.trim();
+          const payload = {
+            side,
+            stake_usd: stake,
+            reason,
+          };
+          if (entryRaw !== '') payload.entry_price = Number(entryRaw);
+
+          await fetchJSON('/api/positions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          $('stake').value = '';
+          $('entryPrice').value = '';
+          $('reason').value = '';
+          setMsg('Paper trade logged ✅');
+          refreshAll();
+        } catch (e) {
+          setMsg(e.message || 'Failed to place paper trade', false);
+        }
+      });
+
+      refreshAll();
+      setInterval(updateLiveMarketClock, 1000);
+      setInterval(refreshMarket, 1000);
+      setInterval(refreshPanels, 5000);
+    </script>
+  </body>
+</html>
