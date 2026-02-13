@@ -186,7 +186,6 @@
           <h1 style="margin:0;font-size:1.6rem;font-weight:800;letter-spacing:-0.5px;">
             <span style="background:linear-gradient(135deg,#59a2ff,#1dd49a);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">PolyBot</span>
           </h1>
-          <span style="color:var(--muted);font-size:.8rem;opacity:.6;">BTC 5m · Paper</span>
         </div>
         <span id="botStatus" title="Bot status" style="display:inline-flex;align-items:center;gap:6px;font-size:.78rem;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid var(--border);backdrop-filter:blur(4px);">
           <span id="botDot" style="width:8px;height:8px;border-radius:50%;background:#666;display:inline-block;box-shadow:0 0 6px rgba(102,102,102,.4);"></span>
@@ -889,6 +888,13 @@
         }
       });
 
+      function fmtTime(secs) {
+        if (secs == null) return '';
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        return m > 0 ? `${m}m ${s}s` : `${s}s`;
+      }
+
       async function refreshBotStatus() {
         try {
           const s = await fetchJSON('/api/bot-status');
@@ -896,7 +902,21 @@
           const label = $('botLabel');
           const colors = { trading: '#1dd49a', analyzing: '#f0b232', error: '#ff5c8a', starting: '#666' };
           dot.style.background = colors[s.state] || '#666';
-          label.textContent = s.detail || s.state;
+          dot.style.boxShadow = `0 0 6px ${colors[s.state] || '#666'}40`;
+
+          if (s.state === 'trading') {
+            const secsMatch = s.detail && s.detail.match(/(\d+)s to/);
+            const t = secsMatch ? fmtTime(parseInt(secsMatch[1])) : '';
+            label.textContent = `In position${t ? ' · ' + t + ' left' : ''}`;
+          } else if (s.state === 'analyzing') {
+            const secsMatch = s.detail && s.detail.match(/(\d+)s left/);
+            const t = secsMatch ? fmtTime(parseInt(secsMatch[1])) : '';
+            label.textContent = `Watching BTC 5m${t ? ' · ' + t + ' left' : ''}`;
+          } else if (s.state === 'error') {
+            label.textContent = 'Error';
+          } else {
+            label.textContent = 'Starting...';
+          }
           label.style.color = s.state === 'error' ? '#ff5c8a' : 'var(--muted)';
         } catch { /* silent */ }
       }
