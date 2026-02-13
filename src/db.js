@@ -74,6 +74,17 @@ const pruneDecisions = db.prepare(`DELETE FROM decisions WHERE id NOT IN (SELECT
 
 const updatePostMortem = db.prepare(`UPDATE positions SET post_mortem = @post_mortem WHERE id = @id`);
 
+// Key-value store for persisting autotuner params
+db.exec(`
+  CREATE TABLE IF NOT EXISTS kv (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+`);
+
+const kvGet = db.prepare(`SELECT value FROM kv WHERE key = ?`);
+const kvSet = db.prepare(`INSERT OR REPLACE INTO kv (key, value) VALUES (@key, @value)`);
+
 module.exports = {
   db,
   insertPosition,
@@ -84,4 +95,6 @@ module.exports = {
   insertDecision,
   getRecentDecisions,
   pruneDecisions,
+  kvGet,
+  kvSet,
 };

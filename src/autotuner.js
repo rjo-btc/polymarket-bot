@@ -1,20 +1,25 @@
 const { runAnalysis } = require('./analysis');
+const { kvGet, kvSet } = require('./db');
+
+const PARAMS_KEY = 'autotuner_params';
+const LOG_KEY = 'autotuner_log';
 
 /**
  * Dynamic strategy parameters — start with defaults, auto-tune based on analysis.
  * These are read by strategies on every evaluation.
+ * PERSISTED to DB so they survive restarts/redeploys.
  */
-const params = {
+const defaults = {
   ema: {
-    min_ema_dist_bps: 8,       // Minimum EMA distance to enter
-    min_slope_abs: 0,           // Minimum absolute slope
-    max_entry_price: 0.65,      // Max entry price — data shows >0.65 has terrible R:R
-    min_entry_price: 0.0,       // Min entry price (0.0 = no filter)
-    entry_window_min: 90,       // Earliest entry (secs to end)
-    entry_window_max: 180,      // Latest entry (secs to end)
-    side_bias: null,            // null = no bias, 'up' or 'down' = only trade that side
-    side_up_weight: 1.0,        // 0-1 multiplier for UP trades (1.0 = full, 0 = disabled)
-    side_down_weight: 1.0,      // 0-1 multiplier for DOWN trades
+    min_ema_dist_bps: 8,
+    min_slope_abs: 0,
+    max_entry_price: 0.65,
+    min_entry_price: 0.0,
+    entry_window_min: 90,
+    entry_window_max: 180,
+    side_bias: null,
+    side_up_weight: 1.0,
+    side_down_weight: 1.0,
     enabled: true,
   },
   session: {
@@ -30,14 +35,60 @@ const params = {
   },
 };
 
-// Track what the tuner changed for the dashboard
-const tuneLog = [];
+// Load persisted params or use defaults
+function loadParams() {
+  try {
+    const row = kvGet.get(PARAMS_KEY);
+    if (row) {
+      const saved = JSON.parse(row.value);
+      // Merge saved over defaults (so new fields get defaults)
+      const merged = JSON.parse(JSON.stringify(defaults));
+      for (const strat of Object.keys(merged)) {
+        if (saved[strat]) {
+          Object.assign(merged[strat], saved[strat]);
+        }
+      }
+      return merged;
+    }
+  } catch (e) {
+    console.error('[AutoTuner] Failed to load params:', e.message);
+  }
+  return JSON.parse(JSON.stringify(defaults));
+}
+
+function loadLog() {
+  try {
+    const row = kvGet.get(LOG_KEY);
+    if (row) return JSON.parse(row.value);
+  } catch (e) {}
+  return [];
+}
+
+const params = loadParams();
+const tuneLog = loadLog();
+
+function saveParams() {
+  try {
+    kvSet.run({ key: PARAMS_KEY, value: JSON.stringify(params) });
+  } catch (e) {
+    console.error('[AutoTuner] Failed to save params:', e.message);
+  }
+}
+
+function saveLog() {
+  try {
+    kvSet.run({ key: LOG_KEY, value: JSON.stringify(tuneLog.slice(-50)) });
+  } catch (e) {}
+}
+
+console.log('[AutoTuner] Loaded params:', JSON.stringify(params.ema));
 
 function log(msg) {
   const entry = { time: new Date().toISOString(), msg };
   tuneLog.push(entry);
   if (tuneLog.length > 50) tuneLog.shift();
   console.log(`[AutoTuner] ${msg}`);
+  saveLog();
 }
 
 /**
@@ -251,6 +302,9 @@ function autoTune() {
       }
     }
   }
+
+  // Persist params after every tune
+  saveParams();
 }
 
 function getParams() {
