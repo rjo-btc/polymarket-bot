@@ -314,6 +314,23 @@ app.post('/api/backfill-postmortems', (req, res) => {
   }
 });
 
+// Temporary: seed DB from base64-encoded SQLite file
+app.post('/api/seed-db', (req, res) => {
+  try {
+    const { data } = req.body;
+    if (!data) return res.status(400).json({ error: 'data required (base64 sqlite)' });
+    const buf = Buffer.from(data, 'base64');
+    const dbPath = require('path').join(__dirname, '..', 'data', 'trader.db');
+    // Close current DB connections
+    const { db } = require('./db');
+    db.close();
+    require('fs').writeFileSync(dbPath, buf);
+    res.json({ status: 'ok', bytes: buf.length, note: 'RESTART REQUIRED — DB replaced' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/notifications', (req, res) => {
   res.json(drainNotifications());
 });
