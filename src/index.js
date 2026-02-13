@@ -189,6 +189,29 @@ app.get('/api/summary', (req, res) => {
       resolved_trades: resolved.length,
       winning_trades: wins.length,
       losing_trades: losses.length,
+      // Max drawdown: worst peak-to-trough in cumulative PnL
+      max_drawdown_usd: (() => {
+        let peak = 0, maxDD = 0, cumPnl = 0;
+        // Sort by id ascending for chronological order
+        const sorted = [...resolved].sort((a, b) => a.id - b.id);
+        for (const p of sorted) {
+          cumPnl += (p.pnl || 0);
+          if (cumPnl > peak) peak = cumPnl;
+          const dd = peak - cumPnl;
+          if (dd > maxDD) maxDD = dd;
+        }
+        return Math.round(maxDD * 100) / 100;
+      })(),
+      // Best single trade
+      best_trade: wins.length > 0 ? (() => {
+        const best = wins.reduce((a, b) => (a.pnl > b.pnl ? a : b));
+        return { id: best.id, pnl: Math.round(best.pnl * 100) / 100, side: best.side, strategy: best.strategy, return_pct: Math.round((best.pnl / best.stake_usd) * 1000) / 10 };
+      })() : null,
+      // Worst single trade
+      worst_trade: losses.length > 0 ? (() => {
+        const worst = losses.reduce((a, b) => (a.pnl < b.pnl ? a : b));
+        return { id: worst.id, pnl: Math.round(worst.pnl * 100) / 100, side: worst.side, strategy: worst.strategy, return_pct: Math.round((worst.pnl / worst.stake_usd) * 1000) / 10 };
+      })() : null,
       by_strategy: byStrategy,
     });
   } catch (e) {

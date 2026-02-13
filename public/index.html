@@ -241,6 +241,16 @@
               <div class="value" id="winRate">-</div>
               <div class="muted tiny" id="winRateMeta"></div>
             </div>
+            <div class="stat">
+              <div class="label">Max drawdown</div>
+              <div class="value red" id="maxDrawdown">-</div>
+              <div class="muted tiny" id="maxDrawdownMeta"></div>
+            </div>
+            <div class="stat">
+              <div class="label">Best trade</div>
+              <div class="value green" id="maxGain">-</div>
+              <div class="muted tiny" id="maxGainMeta"></div>
+            </div>
           </div>
         </section>
 
@@ -384,6 +394,7 @@
     <script>
       const $ = (id) => document.getElementById(id);
       let latestMarket = null;
+      const CAPITAL_START = 1000;
       let marketFetchInFlight = false;
       let panelsFetchInFlight = false;
 
@@ -456,6 +467,16 @@
         $('winRate').textContent = rate == null ? '-' : `${rate.toFixed(1)}%`;
         $('winRateMeta').textContent = resolved > 0 ? `${wins}/${resolved} wins` : '';
         $('winRate').className = `value ${rate == null ? '' : (rate >= 50 ? 'green' : 'red')}`;
+
+        // Max drawdown
+        $('maxDrawdown').textContent = s.max_drawdown_usd != null ? '-' + fmtUsd(s.max_drawdown_usd) : '-';
+        $('maxDrawdownMeta').textContent = s.max_drawdown_usd > 0 ? ((s.max_drawdown_usd / CAPITAL_START * 100).toFixed(1) + '% of start') : '';
+
+        // Best trade
+        if (s.best_trade) {
+          $('maxGain').textContent = '+' + fmtUsd(s.best_trade.pnl);
+          $('maxGainMeta').textContent = '#' + s.best_trade.id + ' ' + s.best_trade.side.toUpperCase() + ' (+' + s.best_trade.return_pct + '%)';
+        }
 
         renderStrategySummary(s.by_strategy || []);
       }
