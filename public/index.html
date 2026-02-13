@@ -31,7 +31,7 @@
       }
 
       .wrap {
-        max-width: 1100px;
+        max-width: 1600px;
         margin: 0 auto;
         padding: 20px;
       }
@@ -69,7 +69,7 @@
 
       .stats {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(5, 1fr);
         gap: 10px;
         margin-top: 10px;
       }
@@ -269,6 +269,39 @@
         </section>
       </div>
 
+      <section class="card" style="margin-top: 14px">
+        <div style="font-weight: 700; margin-bottom: 6px">Positions</div>
+        <div style="overflow-x: auto">
+          <table style="font-size: 0.82rem; white-space: nowrap">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Strat</th>
+                <th>Side</th>
+                <th>Entered</th>
+                <th>TTEnd</th>
+                <th>Entry</th>
+                <th>Stake</th>
+                <th>BTC Entry</th>
+                <th>BTC Start</th>
+                <th>BTC End</th>
+                <th>BTC Now</th>
+                <th>Mark</th>
+                <th>PnL</th>
+                <th>Status</th>
+                <th style="white-space: normal; min-width: 120px">Reason</th>
+                <th style="white-space: normal; min-width: 120px">Post mortem</th>
+              </tr>
+            </thead>
+            <tbody id="positionsBody">
+              <tr>
+                <td colspan="16" class="muted">No positions yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="card" style="margin-top: 14px" id="kellyCard">
         <div style="font-weight: 700; margin-bottom: 6px">Kelly Criterion Sizing</div>
         <div class="muted tiny">Optimal position sizing based on observed performance • Half-Kelly with 20% cap</div>
@@ -297,38 +330,6 @@
             <tbody id="strategySummaryBody">
               <tr>
                 <td colspan="8" class="muted">No strategy stats yet.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="card" style="margin-top: 14px">
-        <div style="font-weight: 700; margin-bottom: 6px">Positions</div>
-        <div style="overflow-x: auto">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Strategy</th>
-                <th>Side</th>
-                <th>Entered</th>
-                <th>Time to end @ entry</th>
-                <th>Entry price</th>
-                <th>BTC @ entry</th>
-                <th>BTC @ market start</th>
-                <th>BTC @ end</th>
-                <th>Reason</th>
-                <th>BTC now</th>
-                <th>Mark</th>
-                <th>PnL</th>
-                <th>Status</th>
-                <th>Post mortem (loss)</th>
-              </tr>
-            </thead>
-            <tbody id="positionsBody">
-              <tr>
-                <td colspan="15" class="muted">No positions yet.</td>
               </tr>
             </tbody>
           </table>
@@ -478,13 +479,13 @@
       function renderPositions(rows) {
         const body = $('positionsBody');
         if (!rows || rows.length === 0) {
-          body.innerHTML = '<tr><td colspan="15" class="muted">No positions yet.</td></tr>';
+          body.innerHTML = '<tr><td colspan="16" class="muted">No positions yet.</td></tr>';
           return;
         }
 
         body.innerHTML = rows
           .map((p) => {
-            const pnlTxt = p.pnl == null ? '-' : `${fmtUsd(p.pnl)} (${(p.pnl_pct || 0).toFixed(2)}%)`;
+            const pnlTxt = p.pnl == null ? '-' : `${fmtUsd(p.pnl)} (${(p.pnl_pct || 0).toFixed(1)}%)`;
             return `
               <tr>
                 <td>${p.id}</td>
@@ -493,15 +494,16 @@
                 <td>${new Date(p.entered_at).toLocaleTimeString()}</td>
                 <td>${fmtDuration(p.seconds_to_end_at_entry)}</td>
                 <td>${fmtProb(p.entry_price)}</td>
+                <td>${fmtUsd(p.stake_usd)}</td>
                 <td>${fmtPrice(p.btc_price_at_entry)}</td>
                 <td>${fmtPrice(p.btc_price_at_start)}</td>
                 <td>${fmtPrice(p.btc_price_at_end)}</td>
-                <td class="tiny">${(p.entry_reason || '-')}</td>
                 <td>${fmtPrice(p.btc_price_now)}</td>
                 <td>${fmtProb(p.mark_price)}</td>
                 <td class="${pnlClass(p.pnl)}">${pnlTxt}</td>
                 <td><span class="badge">${p.status}</span></td>
-                <td class="tiny">${(p.post_mortem || '-')}</td>
+                <td class="tiny" style="white-space:normal">${(p.entry_reason || '-')}</td>
+                <td class="tiny" style="white-space:normal">${(p.post_mortem || '-')}</td>
               </tr>
             `;
           })
