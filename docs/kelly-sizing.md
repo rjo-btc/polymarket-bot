@@ -25,7 +25,7 @@ half_kelly = f* / 2
 ### Confidence Scaling
 Small sample = less trust in the win rate. Scale up as trades accumulate:
 ```
-confidence = min(1.0, sqrt(n / 30))
+confidence = min(1.0, sqrt(n / 20))
 ```
 - At 8 trades: confidence = 0.52 (half strength)
 - At 15 trades: confidence = 0.71

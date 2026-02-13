@@ -198,7 +198,7 @@ app.get('/api/kelly', (req, res) => {
     const resolved = positions.filter(p => p.status === 'resolved');
     const totalPnl = resolved.reduce((s, p) => s + (p.pnl || 0), 0);
     const currentCapital = CAPITAL_START + totalPnl;
-    const MIN_TRADES = 30;
+    const MIN_TRADES = 20;
     const MAX_RISK = 0.20;
 
     function calcKelly(trades) {
