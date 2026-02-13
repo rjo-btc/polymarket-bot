@@ -12,7 +12,7 @@ const LOG_KEY = 'autotuner_log';
 const defaults = {
   ema: {
     min_ema_dist_bps: 8,
-    min_slope_abs: 0,
+    min_slope_abs: 2.0,
     max_entry_price: 0.65,
     min_entry_price: 0.0,
     entry_window_min: 90,
@@ -23,7 +23,7 @@ const defaults = {
     enabled: true,
   },
   session: {
-    min_slope_abs: 0,
+    min_slope_abs: 2.0,
     max_entry_price: 0.65,
     min_entry_price: 0.0,
     entry_window_min: 90,
