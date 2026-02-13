@@ -29,7 +29,8 @@ db.exec(`
     pnl REAL,
     pnl_pct REAL,
     status TEXT NOT NULL DEFAULT 'open',
-    market_end_at TEXT
+    market_end_at TEXT,
+    filter_version INTEGER DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS decisions (
@@ -46,11 +47,16 @@ db.exec(`
 `);
 
 // Positions
+// Add filter_version column if missing (migration for existing DBs)
+try { db.exec(`ALTER TABLE positions ADD COLUMN filter_version INTEGER DEFAULT 0`); } catch(e) { /* already exists */ }
+
+const CURRENT_FILTER_VERSION = 2; // v0=no filters, v1=early tuning, v2=slope2.0+dist3+entry0.65
+
 const insertPosition = db.prepare(`
   INSERT INTO positions (market_slug, market_title, strategy, side, stake_usd, shares, entry_price,
-    entered_at, seconds_to_end_at_entry, btc_price_at_entry, btc_price_at_start, entry_reason, status, market_end_at)
+    entered_at, seconds_to_end_at_entry, btc_price_at_entry, btc_price_at_start, entry_reason, status, market_end_at, filter_version)
   VALUES (@market_slug, @market_title, @strategy, @side, @stake_usd, @shares, @entry_price,
-    @entered_at, @seconds_to_end_at_entry, @btc_price_at_entry, @btc_price_at_start, @entry_reason, 'open', @market_end_at)
+    @entered_at, @seconds_to_end_at_entry, @btc_price_at_entry, @btc_price_at_start, @entry_reason, 'open', @market_end_at, ${CURRENT_FILTER_VERSION})
 `);
 
 const getAllPositions = db.prepare(`SELECT * FROM positions ORDER BY id DESC`);

@@ -740,9 +740,9 @@
                 ${progressBar(recPct, k.max_risk_cap_pct, recColor)}
                 ${s.status !== 'active' ? `
                   <div style="margin-top:6px;font-size:0.75rem" class="muted">
-                    Data collection: ${s.n}/${k.min_trades_threshold}
+                    Data: ${s.n} trades (${s.effective_n || s.n} weighted) / ${k.min_trades_threshold} needed${s.current_version_trades != null ? ' · ' + s.current_version_trades + ' on current filters' : ''}
                   </div>
-                  ${progressBar(s.n, k.min_trades_threshold, 'var(--muted)')}
+                  ${progressBar(s.effective_n || s.n, k.min_trades_threshold, 'var(--muted)')}
                 ` : ''}
               </div>`;
           }

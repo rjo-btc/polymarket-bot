@@ -228,26 +228,48 @@ app.get('/api/kelly', (req, res) => {
     const MIN_TRADES = 50;
     const MAX_RISK = 0.20;
 
+    const CURRENT_FILTER_VERSION = 2;
+
     function calcKelly(trades) {
       const n = trades.length;
       const wins = trades.filter(p => p.pnl > 0);
       const losses = trades.filter(p => p.pnl <= 0);
-      const winRate = n > 0 ? wins.length / n : 0;
 
-      // Average payout ratio for wins: (1/entry_price - 1)
-      const payouts = wins.map(p => (1 / p.entry_price) - 1).filter(x => isFinite(x) && x > 0);
-      const avgPayout = payouts.length > 0 ? payouts.reduce((a, b) => a + b, 0) / payouts.length : 1;
+      // Weight trades by filter version — current version = 1.0, older = decayed
+      // v2 (current) = 1.0, v1 = 0.5, v0 = 0.25
+      function tradeWeight(p) {
+        const v = p.filter_version || 0;
+        if (v >= CURRENT_FILTER_VERSION) return 1.0;
+        if (v === CURRENT_FILTER_VERSION - 1) return 0.5;
+        return 0.25;
+      }
+
+      const totalWeight = trades.reduce((s, p) => s + tradeWeight(p), 0);
+      const weightedWins = wins.reduce((s, p) => s + tradeWeight(p), 0);
+      const winRate = totalWeight > 0 ? weightedWins / totalWeight : 0;
+
+      // Weighted average payout ratio
+      const winPayouts = wins.map(p => ({ payout: (1 / p.entry_price) - 1, w: tradeWeight(p) })).filter(x => isFinite(x.payout) && x.payout > 0);
+      const totalPayoutWeight = winPayouts.reduce((s, x) => s + x.w, 0);
+      const avgPayout = totalPayoutWeight > 0 ? winPayouts.reduce((s, x) => s + x.payout * x.w, 0) / totalPayoutWeight : 1;
+
+      // Effective sample size (sum of weights) for confidence calc
+      const effectiveN = totalWeight;
 
       const fullKelly = avgPayout > 0 ? (avgPayout * winRate - (1 - winRate)) / avgPayout : 0;
       const halfKelly = Math.max(0, fullKelly / 2);
-      const confidence = Math.min(1, Math.sqrt(n / MIN_TRADES));
+      const confidence = Math.min(1, Math.sqrt(effectiveN / MIN_TRADES));
       const adjusted = halfKelly * confidence;
       const capped = Math.min(adjusted, MAX_RISK);
 
-      // Sharpe ratio: mean(return%) / stdev(return%)
-      const returns = trades.map(p => p.pnl / p.stake_usd);
-      const meanReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
-      const variance = returns.length > 1 ? returns.reduce((s, r) => s + (r - meanReturn) ** 2, 0) / (returns.length - 1) : 0;
+      // Count trades at current filter version for progress
+      const currentVersionTrades = trades.filter(p => (p.filter_version || 0) >= CURRENT_FILTER_VERSION).length;
+
+      // Sharpe ratio: weighted mean(return%) / stdev(return%)
+      const returns = trades.map(p => ({ r: p.pnl / p.stake_usd, w: tradeWeight(p) }));
+      const wTotal = returns.reduce((s, x) => s + x.w, 0);
+      const meanReturn = wTotal > 0 ? returns.reduce((s, x) => s + x.r * x.w, 0) / wTotal : 0;
+      const variance = wTotal > 1 ? returns.reduce((s, x) => s + x.w * (x.r - meanReturn) ** 2, 0) / (wTotal - 1) : 0;
       const stdReturn = Math.sqrt(variance);
       const sharpe = stdReturn > 0 ? meanReturn / stdReturn : 0;
 
@@ -264,8 +286,10 @@ app.get('/api/kelly', (req, res) => {
         adjusted_pct: Math.round(adjusted * 1000) / 10,
         capped_pct: Math.round(capped * 1000) / 10,
         sharpe_ratio: Math.round(sharpe * 100) / 100,
-        status: n >= MIN_TRADES ? 'active' : 'collecting_data',
-        trades_needed: Math.max(0, MIN_TRADES - n),
+        effective_n: Math.round(effectiveN * 10) / 10,
+        current_version_trades: currentVersionTrades,
+        status: effectiveN >= MIN_TRADES ? 'active' : 'collecting_data',
+        trades_needed: Math.max(0, Math.ceil(MIN_TRADES - effectiveN)),
       };
     }
 
