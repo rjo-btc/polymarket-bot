@@ -994,8 +994,12 @@
             } else if (p.key === 'expensive_entry_trap') {
               detail = `Expensive losses: ${state.recent_expensive_losses || 0}${state.recent_expensive_losses >= 2 ? ' → temp cap 0.50' : ''}`;
             } else if (p.key === 'directional_spam') {
-              const mult = state.current_streak >= 2 ? Math.min(2.0, 1 + (state.current_streak - 1) * 0.25).toFixed(2) : null;
-              detail = `${state.streak_side ? state.streak_side.toUpperCase() : '—'} streak: ${state.current_streak || 0} in a row${mult ? ` → requiring ${mult}x signal strength` : ''}`;
+              const streak = state.current_streak || 0;
+              const minSince = state.last_trade_at ? Math.floor((Date.now() - state.last_trade_at) / 60000) : 0;
+              const decaySteps = Math.floor(minSince / 5);
+              const effective = Math.max(1, streak - decaySteps);
+              const mult = effective >= 2 ? Math.min(2.0, 1 + (effective - 1) * 0.25).toFixed(2) : null;
+              detail = `${state.streak_side ? state.streak_side.toUpperCase() : '—'}: ${streak} trades${decaySteps > 0 ? ` (eff. ${effective} after ${decaySteps * 5}min decay)` : ''}${mult ? ` → ${mult}x signals` : ' → normal'}`;
             }
 
             html += `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;padding:6px 8px;background:var(--card);border-radius:6px;border:1px solid ${isActive ? 'var(--red)' : 'var(--border)'}">

@@ -130,15 +130,22 @@ const PHENOMENA = {
       const state = ctx.phenomenaState.directional_spam || {};
       const streak = state.current_streak || 0;
       const streakSide = state.streak_side;
+      const lastTradeAt = state.last_trade_at || 0;
       
       if (streakSide === signal.side && streak >= 2) {
-        // Escalating multiplier: 2 in a row = 1.25x, 3 = 1.5x, 4 = 1.75x, 5+ = 2x
-        const multiplier = Math.min(2.0, 1 + (streak - 1) * 0.25);
-        return {
-          block: false,
-          tighten: { min_slope_multiplier: multiplier, min_dist_multiplier: multiplier },
-          reason: `DIRECTIONAL_SPAM: ${streak} consecutive ${signal.side.toUpperCase()} trades — requiring ${multiplier.toFixed(2)}x signal strength`,
-        };
+        // Time decay: every 5 minutes since last trade reduces effective streak by 1
+        const minutesSinceLast = (Date.now() - lastTradeAt) / 60000;
+        const decaySteps = Math.floor(minutesSinceLast / 5);
+        const effectiveStreak = Math.max(1, streak - decaySteps);
+        
+        if (effectiveStreak >= 2) {
+          const multiplier = Math.min(2.0, 1 + (effectiveStreak - 1) * 0.25);
+          return {
+            block: false,
+            tighten: { min_slope_multiplier: multiplier, min_dist_multiplier: multiplier },
+            reason: `DIRECTIONAL_SPAM: ${streak} ${signal.side.toUpperCase()} trades (effective ${effectiveStreak} after ${decaySteps > 0 ? decaySteps * 5 + 'min decay' : 'no decay'}) — requiring ${multiplier.toFixed(2)}x signal strength`,
+          };
+        }
       }
       return { block: false };
     },
@@ -243,6 +250,7 @@ function onTradeResolved(trade) {
     ds.streak_side = trade.side;
     ds.current_streak = 1;
   }
+  ds.last_trade_at = Date.now();
 
   // Decay cooldowns on wins
   if (trade.pnl > 0) {
