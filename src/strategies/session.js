@@ -57,6 +57,13 @@ async function evaluate(market, btcPrice) {
     return { ...base, action: 'SKIP', side: null, reason: `Outside entry window (${secsToEnd}s); PA[session=off,est=${estTime}]` };
   }
 
+  // Skip weekends — session edges are based on equity market hours, no real sessions on Sat/Sun
+  const now = new Date();
+  const etDay = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay();
+  if (etDay === 0 || etDay === 6) {
+    return { ...base, action: 'SKIP', side: null, reason: `Weekend (${etDay === 0 ? 'Sun' : 'Sat'} ET) — no equity sessions; PA[session=weekend,est=${estTime}]` };
+  }
+
   const session = isNearSessionEdge();
   const klines = await fetchKlines(50);
 
