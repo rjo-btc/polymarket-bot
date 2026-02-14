@@ -107,6 +107,7 @@ async function evaluate(market, btcPrice) {
 
   const slopeAbs = Math.abs(slope);
   const absEmaDistBps = Math.abs(emaDistBps);
+  const absPriceDistBps = Math.abs(distBps);  // price-to-EMA9 distance
 
   // === EARLY ENTRY SIGNALS (240-270s before end) ===
   // These fire before standard EMA alignment to get cheaper entries
@@ -121,7 +122,7 @@ async function evaluate(market, btcPrice) {
     const range = lastCandle.high - lastCandle.low;
     const bodyRatio = range > 0 ? Math.abs(body) / range : 0;
     
-    if (bodyBps >= 5 && bodyRatio >= 0.7 && absEmaDistBps >= (p.min_ema_dist_bps || 5)) {
+    if (bodyBps >= 5 && bodyRatio >= 0.7 && absPriceDistBps >= (p.min_ema_dist_bps || 5)) {
       const emaDist = ((fast - slow) / slow) * 10000;
       if (body > 0 && emaDist > -3 && currentRSI > 45 && currentRSI < (p.rsi_long_max ?? 75)) {
         return { ...base, action: 'ENTER', side: 'up', 
@@ -149,7 +150,7 @@ async function evaluate(market, btcPrice) {
         else break;
       }
     }
-    if (accel1 > 0 && slopeAbs >= 1 && absEmaDistBps >= (p.min_ema_dist_bps || 5)) {
+    if (accel1 > 0 && slopeAbs >= 1 && absPriceDistBps >= (p.min_ema_dist_bps || 5)) {
       if (slope > 0 && fast > slow && currentRSI > 45 && currentRSI < (p.rsi_long_max ?? 75)) {
         return { ...base, action: 'ENTER', side: 'up',
           reason: `EARLY SLOPE ACCEL UP: slope ${slope.toFixed(4)} accelerating (Δ${accel1.toFixed(4)}, ${consecAccel} consec), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
