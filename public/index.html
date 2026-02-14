@@ -565,7 +565,7 @@
       }
 
       const POS_PER_PAGE = 6;
-      let posCurrentPage = -1; // -1 = latest page (auto-follow)
+      let posCurrentPage = null; // null = latest page (auto-follow)
       let posAllRows = [];
 
       function renderPositions(rows) {
@@ -580,7 +580,7 @@
         const totalPages = Math.ceil(rows.length / POS_PER_PAGE);
         
         // If on "latest" (-1) or page exceeds total, go to last page
-        const activePage = (posCurrentPage < 0 || posCurrentPage >= totalPages) ? totalPages - 1 : posCurrentPage;
+        const activePage = (posCurrentPage === null || posCurrentPage >= totalPages) ? totalPages - 1 : posCurrentPage;
 
         const start = activePage * POS_PER_PAGE;
         const pageRows = rows.slice(start, start + POS_PER_PAGE);
@@ -625,7 +625,8 @@
       }
 
       function posGoPage(page) {
-        posCurrentPage = page;
+        if (page < 0) { posCurrentPage = null; } // back to auto-latest
+        else { posCurrentPage = page; }
         renderPositions(posAllRows);
       }
 
