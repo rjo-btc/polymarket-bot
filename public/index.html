@@ -248,9 +248,14 @@
               <div class="value" id="capitalPerTrade">-</div>
             </div>
             <div class="stat">
-              <div class="label">Win rate</div>
+              <div class="label">Win rate (raw)</div>
               <div class="value" id="winRate">-</div>
               <div class="muted tiny" id="winRateMeta"></div>
+            </div>
+            <div class="stat">
+              <div class="label">Win rate (weighted) <span style="font-size:10px;color:var(--muted)">ⓘ</span></div>
+              <div class="value" id="weightedWR">-</div>
+              <div class="muted tiny" id="weightedWRMeta"></div>
             </div>
             <div class="stat">
               <div class="label">Max drawdown</div>
@@ -537,6 +542,17 @@
         $('winRate').textContent = rate == null ? '-' : `${rate.toFixed(1)}%`;
         $('winRateMeta').textContent = resolved > 0 ? `${wins}/${resolved} wins` : '';
         $('winRate').className = `value ${rate == null ? '' : (rate >= 50 ? 'green' : 'red')}`;
+
+        // Weighted win rate
+        const wWR = s.weighted_win_rate;
+        const cvTrades = s.current_version_trades || 0;
+        const cvWR = s.current_version_wr;
+        $('weightedWR').textContent = wWR != null ? `${wWR.toFixed(1)}%` : '-';
+        $('weightedWR').className = `value ${wWR == null ? '' : (wWR >= 50 ? 'green' : 'red')}`;
+        let wrMeta = '';
+        if (wWR != null) wrMeta = `${s.weighted_total} eff. trades`;
+        if (cvTrades > 0) wrMeta += ` · v3: ${cvWR?.toFixed(1) ?? '?'}% (${cvTrades})`;
+        $('weightedWRMeta').textContent = wrMeta;
 
         // Max drawdown
         $('maxDrawdown').textContent = s.max_drawdown_usd != null ? '-' + fmtUsd(s.max_drawdown_usd) : '-';

@@ -213,6 +213,28 @@ app.get('/api/summary', (req, res) => {
         return { id: worst.id, pnl: Math.round(worst.pnl * 100) / 100, side: worst.side, strategy: worst.strategy, return_pct: Math.round((worst.pnl / worst.stake_usd) * 1000) / 10 };
       })() : null,
       by_strategy: byStrategy,
+      // Weighted win rate — same weighting as Kelly (current version = 1.0, older decayed)
+      ...(() => {
+        const CURRENT_FV = 3;
+        function tw(p) {
+          const v = p.filter_version || 0;
+          if (v >= CURRENT_FV) return 1.0;
+          if (v === CURRENT_FV - 1) return 0.5;
+          return 0.25;
+        }
+        const totalWeight = resolved.reduce((s, p) => s + tw(p), 0);
+        const weightedWins = wins.reduce((s, p) => s + tw(p), 0);
+        const weightedWR = totalWeight > 0 ? (weightedWins / totalWeight) * 100 : null;
+        const currentVersionTrades = resolved.filter(p => (p.filter_version || 0) >= CURRENT_FV);
+        const currentWins = currentVersionTrades.filter(p => p.pnl > 0);
+        const currentWR = currentVersionTrades.length > 0 ? (currentWins.length / currentVersionTrades.length) * 100 : null;
+        return {
+          weighted_win_rate: weightedWR != null ? Math.round(weightedWR * 10) / 10 : null,
+          weighted_total: Math.round(totalWeight * 10) / 10,
+          current_version_trades: currentVersionTrades.length,
+          current_version_wr: currentWR != null ? Math.round(currentWR * 10) / 10 : null,
+        };
+      })(),
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
