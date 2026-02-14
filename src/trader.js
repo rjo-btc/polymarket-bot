@@ -153,6 +153,24 @@ async function traderLoop() {
                 continue;
               }
 
+              // Apply minimum R:R filter — blocks coinflip trades
+              const rr = (1 - entryPrice) / entryPrice;
+              const minRR = tp.min_rr ?? 1.5;
+              if (rr < minRR) {
+                console.log(`[Trader] ${decision.strategy.toUpperCase()} FILTERED: R:R ${rr.toFixed(2)}x < min ${minRR}x (entry ${entryPrice.toFixed(3)})`);
+                insertDecision.run({
+                  strategy: decision.strategy,
+                  market_slug: market.market_slug,
+                  market_end_at: market.market_end_at,
+                  last_checked_at: new Date().toISOString(),
+                  seconds_to_end: Math.floor((market.endMs - Date.now()) / 1000),
+                  action: 'SKIP',
+                  side: decision.side,
+                  reason: `R:R too low: ${rr.toFixed(2)}x < ${minRR}x (entry @ ${entryPrice.toFixed(3)})`,
+                });
+                continue;
+              }
+
               // Apply side bias from auto-tuner
               const sideWeight = decision.side === 'up' ? (tp.side_up_weight ?? 1.0) : (tp.side_down_weight ?? 1.0);
               if (sideWeight < 1.0) {

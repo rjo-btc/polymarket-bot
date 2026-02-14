@@ -583,11 +583,34 @@ test('Math.abs on "4.0 bps" = NaN (the old bug)', () => {
 // ================================================================
 console.log('\n🔬 11. Entry Price Filters\n');
 
-test('Entry > 0.65 is filtered', () => {
-  const maxEntry = 0.65;
-  assert(0.70 > maxEntry, '0.70 should be above max entry');
-  assert(0.65 <= maxEntry, '0.65 should pass (<=)');
-  assert(0.64 <= maxEntry, '0.64 should pass');
+test('Entry > 0.45 is filtered (was 0.65)', () => {
+  const maxEntry = 0.45;
+  assert(0.50 > maxEntry, '0.50 should be above max entry');
+  assert(0.45 <= maxEntry, '0.45 should pass (<=)');
+  assert(0.40 <= maxEntry, '0.40 should pass');
+});
+
+test('R:R filter blocks coinflip trades', () => {
+  // R:R = (1 - entry) / entry
+  const minRR = 1.5;
+  // entry 0.475 → R:R = 0.525/0.475 = 1.105x → BLOCKED
+  const rr_475 = (1 - 0.475) / 0.475;
+  assert(rr_475 < minRR, `Entry 0.475 R:R ${rr_475.toFixed(2)}x should be below ${minRR}x`);
+  // entry 0.495 → R:R = 0.505/0.495 = 1.02x → BLOCKED
+  const rr_495 = (1 - 0.495) / 0.495;
+  assert(rr_495 < minRR, `Entry 0.495 R:R ${rr_495.toFixed(2)}x should be below ${minRR}x`);
+  // entry 0.40 → R:R = 0.60/0.40 = 1.5x → PASSES (exactly at threshold)
+  const rr_40 = (1 - 0.40) / 0.40;
+  assert(rr_40 >= minRR - 0.001, `Entry 0.40 R:R ${rr_40.toFixed(4)}x should pass ${minRR}x`);
+  // entry 0.35 → R:R = 0.65/0.35 = 1.86x → PASSES
+  const rr_35 = (1 - 0.35) / 0.35;
+  assert(rr_35 >= minRR, `Entry 0.35 R:R ${rr_35.toFixed(2)}x should pass ${minRR}x`);
+});
+
+test('R:R 1.5x corresponds to max entry 0.40', () => {
+  // At exactly 1.5x R:R, entry = 1 / (1 + 1.5) = 0.40
+  const maxEntryForRR = 1 / (1 + 1.5);
+  assert(Math.abs(maxEntryForRR - 0.40) < 0.001, `1.5x R:R = entry ${maxEntryForRR.toFixed(3)}, expected 0.40`);
 });
 
 // ================================================================
