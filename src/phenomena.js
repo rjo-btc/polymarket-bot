@@ -357,4 +357,11 @@ function getState() { return { state: phenomenaState, log: phenomenaLog.slice(-5
 // Init
 loadState();
 
-module.exports = { onTradeResolved, checkGuards, consumeCooldown, getState, PHENOMENA };
+function resetState() {
+  phenomenaState = {};
+  phenomenaLog = [];
+  saveState();
+  console.log('[Phenomena] State reset');
+}
+
+module.exports = { onTradeResolved, checkGuards, consumeCooldown, getState, resetState, PHENOMENA };

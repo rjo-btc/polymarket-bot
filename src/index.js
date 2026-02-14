@@ -9,7 +9,7 @@ const { drainNotifications } = require('./notify');
 const { runAnalysis } = require('./analysis');
 const { getParams, getTuneLog, resetParams, setParam } = require('./autotuner');
 const { getLatestState: getEmaState, computeState: computeEmaState } = require('./strategies/ema');
-const { getState: getPhenomenaState } = require('./phenomena');
+const { getState: getPhenomenaState, resetState: resetPhenomenaState } = require('./phenomena');
 
 const app = express();
 app.use(express.json());
@@ -340,6 +340,13 @@ app.post('/api/autotuner/set', (req, res) => {
 app.get('/api/phenomena', (req, res) => {
   try {
     res.json(getPhenomenaState());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/phenomena/reset', (req, res) => {
+  try {
+    resetPhenomenaState();
+    res.json({ ok: true, message: 'Phenomena state cleared' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
