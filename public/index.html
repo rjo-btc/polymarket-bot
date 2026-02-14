@@ -184,7 +184,7 @@
       <header style="display:flex;align-items:center;justify-content:space-between;padding-bottom:14px;border-bottom:1px solid var(--border);margin-bottom:16px;">
         <div style="display:flex;align-items:center;gap:14px;">
           <h1 style="margin:0;font-size:1.6rem;font-weight:800;letter-spacing:-0.5px;">
-            <span style="background:linear-gradient(135deg,#59a2ff,#1dd49a);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Bitcoin Up or Down 5m Scalper</span>
+            <span style="background:linear-gradient(135deg,#59a2ff,#1dd49a);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">PolyBot</span>
           </h1>
         </div>
         <span id="botStatus" title="Bot status" style="display:inline-flex;align-items:center;gap:6px;font-size:.78rem;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid var(--border);backdrop-filter:blur(4px);">
@@ -192,8 +192,6 @@
           <span id="botLabel" style="color:var(--muted);">Loading...</span>
         </span>
       </header>
-
-      <div style="margin-bottom:12px;"></div>
 
       <div class="grid">
         <section class="card market-card">
@@ -444,7 +442,8 @@
 
       function renderMarket(m) {
         latestMarket = m;
-        $('marketTitle').textContent = m.title;
+        $('marketTitle').textContent = 'Bitcoin Up or Down 5m Scalper';
+        $('marketMeta').style.marginTop = '8px';
         $('marketMeta').textContent = `${m.market_slug} • ${new Date(m.market_start_at).toLocaleString()} → ${new Date(m.market_end_at).toLocaleString()}`;
         $('upPrice').textContent = fmtProb(m.up_price);
         $('downPrice').textContent = fmtProb(m.down_price);
