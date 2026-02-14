@@ -565,7 +565,8 @@
       }
 
       const POS_PER_PAGE = 6;
-      let posCurrentPage = null; // null = latest page (auto-follow)
+      let posUserNavigated = false; // true once user clicks a page arrow
+      let posCurrentPage = 0;
       let posAllRows = [];
 
       function renderPositions(rows) {
@@ -580,8 +581,8 @@
         posAllRows = [...rows].sort((a, b) => a.id - b.id);
         const totalPages = Math.ceil(posAllRows.length / POS_PER_PAGE);
         
-        // Default to last page (most recent trades)
-        const activePage = (posCurrentPage === null || posCurrentPage >= totalPages) ? totalPages - 1 : posCurrentPage;
+        // Default to last page (most recent trades) unless user has manually navigated
+        const activePage = !posUserNavigated ? totalPages - 1 : Math.min(posCurrentPage, totalPages - 1);
 
         const start = activePage * POS_PER_PAGE;
         const pageRows = posAllRows.slice(start, start + POS_PER_PAGE);
@@ -626,8 +627,8 @@
       }
 
       function posGoPage(page) {
-        if (page < 0) { posCurrentPage = null; } // back to auto-latest
-        else { posCurrentPage = page; }
+        posUserNavigated = true;
+        posCurrentPage = Math.max(0, page);
         renderPositions(posAllRows);
       }
 
