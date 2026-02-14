@@ -9,6 +9,7 @@ const { params: tunerParams } = require('./autotuner');
 const { notify } = require('./notify');
 const { scoreSetup } = require('./confidence');
 const { checkGuards, consumeCooldown } = require('./phenomena');
+const { checkBreaker } = require('./circuitBreaker');
 
 const RISK_PCT = parseFloat(process.env.RISK_PCT) || 7; // % of current capital per trade
 const CAPITAL_START = parseFloat(process.env.CAPITAL_START_USD) || 1000;
@@ -123,7 +124,7 @@ async function traderLoop() {
               const signalAt = new Date().toISOString();
               const signalBtcPrice = btc.price;
               const signalSecsToEnd = Math.floor((market.endMs - Date.now()) / 1000);
-              const emaState = getEmaState();
+              // emaState already fetched above for circuit breaker
               
               // Detect signal type from reason
               let signalType = 'standard';
@@ -158,6 +159,35 @@ async function traderLoop() {
                   console.log(`[Trader] ${decision.strategy.toUpperCase()} SIDE BIAS SKIP: ${decision.side.toUpperCase()} weight ${sideWeight} (rolled skip)`);
                   continue;
                 }
+              }
+
+              // Check circuit breaker first (self-healing filter enforcement)
+              const emaState = getEmaState();
+              const breakerSignal = {
+                side: decision.side,
+                entry_price: entryPrice,
+                dist: emaState?.ema_dist_bps ?? null,
+                edist: emaState?.ema_dist_bps ?? null,
+                slope: emaState?.slope ?? null,
+                rsi: emaState?.rsi ?? null,
+                min_ema_dist_bps: (tp.min_ema_dist_bps || 5),
+                min_slope_abs: (tp.min_slope_abs || 2),
+                max_entry_price: (tp.max_entry_price || 0.65),
+              };
+              const breakerResult = checkBreaker(breakerSignal);
+              if (breakerResult.block) {
+                console.log(`[Trader] CIRCUIT BREAKER BLOCKED: ${breakerResult.reason}`);
+                insertDecision.run({
+                  strategy: decision.strategy,
+                  market_slug: market.market_slug,
+                  market_end_at: market.market_end_at,
+                  last_checked_at: new Date().toISOString(),
+                  seconds_to_end: Math.floor((market.endMs - Date.now()) / 1000),
+                  action: 'SKIP',
+                  side: decision.side,
+                  reason: breakerResult.reason,
+                });
+                continue;
               }
 
               // Check phenomena guards before entering

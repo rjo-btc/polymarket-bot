@@ -10,6 +10,7 @@ const { runAnalysis } = require('./analysis');
 const { getParams, getTuneLog, resetParams, setParam } = require('./autotuner');
 const { getLatestState: getEmaState, computeState: computeEmaState } = require('./strategies/ema');
 const { getState: getPhenomenaState, resetState: resetPhenomenaState } = require('./phenomena');
+const { getState: getBreakerState, resetState: resetBreakerState } = require('./circuitBreaker');
 
 const app = express();
 app.use(express.json());
@@ -369,6 +370,19 @@ app.post('/api/phenomena/reset', (req, res) => {
   try {
     resetPhenomenaState();
     res.json({ ok: true, message: 'Phenomena state cleared' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/breaker', (req, res) => {
+  try {
+    res.json(getBreakerState());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/breaker/reset', (req, res) => {
+  try {
+    resetBreakerState();
+    res.json({ ok: true, message: 'Circuit breaker state cleared' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

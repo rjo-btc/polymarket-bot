@@ -3,6 +3,7 @@ const { getBtcPrice } = require('./btcPrice');
 const { autoTune, getParams } = require('./autotuner');
 const { notify } = require('./notify');
 const { onTradeResolved, getState: getPhenomenaState } = require('./phenomena');
+const { reportBreach, onWin: onBreakerWin } = require('./circuitBreaker');
 
 async function resolveExpiredPositions() {
   const open = getOpenPositions.all();
@@ -84,12 +85,24 @@ async function resolveExpiredPositions() {
     // Run auto-tuner after every resolution
     try { autoTune(); } catch (e) { console.error('[Resolver] AutoTune error:', e.message); }
 
-    // Generate detailed loss explanation
+    // Generate detailed loss explanation + circuit breaker
     if (!won) {
       try {
-        const explanation = buildLossExplanation(pos, btcStart, btcEnd, btcWentUp, pnl);
+        const { explanation, violations, metrics } = buildLossExplanation(pos, btcStart, btcEnd, btcWentUp, pnl);
         notify(explanation, 'loss_analysis');
+        
+        // Circuit breaker: if filters were bypassed, auto-block similar trades
+        if (violations.length > 0) {
+          reportBreach(
+            { id: pos.id, side: pos.side, pnl: Math.round(pnl * 100) / 100, entry_price: pos.entry_price },
+            violations,
+            metrics
+          );
+        }
       } catch (e) { console.error('[Resolver] Loss explanation error:', e.message); }
+    } else {
+      // Clear circuit breaker on wins
+      try { onBreakerWin({ side: pos.side }); } catch (e) { /* ignore */ }
     }
   }
 }
@@ -216,7 +229,20 @@ function buildLossExplanation(pos, btcStart, btcEnd, btcWentUp, pnl) {
   lines.push('');
   lines.push(`💰 Capital: $${capital.toFixed(0)} (${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(0)} total)`);
 
-  return lines.join('\n');
+  return {
+    explanation: lines.join('\n'),
+    violations: shouldHaveBlocked,
+    metrics: {
+      dist: pa.dist,
+      edist: pa.edist,
+      slope: pa.slope,
+      rsi: pa.rsi,
+      side: pos.side,
+      entry_price: pos.entry_price,
+      signal_type: (pos.entry_reason || '').includes('SLOPE ACCEL') ? 'slope_accel' :
+                   (pos.entry_reason || '').includes('MOMENTUM BURST') ? 'momentum_burst' : 'standard',
+    },
+  };
 }
 
 module.exports = { resolveExpiredPositions };
