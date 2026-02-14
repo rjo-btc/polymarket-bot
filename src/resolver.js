@@ -120,6 +120,47 @@ function buildLossExplanation(pos, btcStart, btcEnd, btcWentUp, pnl) {
   lines.push(`  Timing: ${pos.seconds_to_end_at_entry}s before end`);
   lines.push('');
 
+  // Would current filters have caught this?
+  lines.push('🛡️ Filter Check:');
+  const shouldHaveBlocked = [];
+  if (pa.dist !== undefined && Math.abs(pa.dist) < (tp.min_ema_dist_bps || 5)) {
+    shouldHaveBlocked.push(`EMA dist ${Math.abs(pa.dist).toFixed(1)} < min ${tp.min_ema_dist_bps || 5} bps`);
+  }
+  if (pa.slope !== undefined && Math.abs(pa.slope) < (tp.min_slope_abs || 2)) {
+    shouldHaveBlocked.push(`Slope ${Math.abs(pa.slope).toFixed(2)} < min ${tp.min_slope_abs || 2}`);
+  }
+  if (pos.entry_price > (tp.max_entry_price || 0.65)) {
+    shouldHaveBlocked.push(`Entry ${pos.entry_price.toFixed(3)} > max ${tp.max_entry_price || 0.65}`);
+  }
+  // Check if phenomena guards would have blocked
+  const phenState = getPhenomenaState();
+  if (phenState.state.ema_lag_reversal?.active_side === pos.side && (phenState.state.ema_lag_reversal?.consecutive_losses || 0) >= 2) {
+    shouldHaveBlocked.push(`EMA Lag Reversal guard (${phenState.state.ema_lag_reversal.consecutive_losses} consec ${pos.side} losses)`);
+  }
+  if (phenState.state.side_streak_loss?.losing_side === pos.side && (phenState.state.side_streak_loss?.streak || 0) >= 3) {
+    shouldHaveBlocked.push(`Side Streak guard (${phenState.state.side_streak_loss.streak} ${pos.side} losses → needs 1.5x signals)`);
+  }
+  if (phenState.state.flat_market_chop?.recent_chop_losses >= 2) {
+    shouldHaveBlocked.push(`Chop guard (${phenState.state.flat_market_chop.recent_chop_losses} flat losses → needs 2x dist)`);
+  }
+  if (phenState.state.expensive_entry_trap?.recent_expensive_losses >= 2 && pos.entry_price > 0.50) {
+    shouldHaveBlocked.push(`Expensive Entry guard (temp cap 0.50, entry was ${pos.entry_price.toFixed(3)})`);
+  }
+  // Check filter version
+  if ((pos.filter_version || 0) < 2) {
+    shouldHaveBlocked.push(`Pre-v2 filters (trade taken under old params)`);
+  }
+
+  if (shouldHaveBlocked.length > 0) {
+    lines.push(`  ❌ SHOULD HAVE BEEN BLOCKED:`);
+    for (const reason of shouldHaveBlocked) {
+      lines.push(`    • ${reason}`);
+    }
+  } else {
+    lines.push(`  ✅ Passed all current filters — legit setup, just lost`);
+  }
+  lines.push('');
+
   // BTC move analysis
   const absBps = Math.abs(parseFloat(btcMoveBps));
   if (absBps < 5) {
