@@ -584,7 +584,7 @@
         const activePage = (posCurrentPage === null || posCurrentPage >= totalPages) ? totalPages - 1 : posCurrentPage;
 
         const start = activePage * POS_PER_PAGE;
-        const pageRows = rows.slice(start, start + POS_PER_PAGE);
+        const pageRows = posAllRows.slice(start, start + POS_PER_PAGE);
 
         body.innerHTML = pageRows
           .map((p) => {
