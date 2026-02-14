@@ -287,7 +287,11 @@
       </div>
 
       <section class="card" style="margin-top: 14px">
-        <div style="font-weight: 700; margin-bottom: 6px">Positions</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-weight: 700">Positions</div>
+          <div id="positionsPager" style="display:flex;align-items:center;gap:6px;font-size:12px">
+          </div>
+        </div>
         <div style="overflow-x: auto">
           <table style="font-size: 0.82rem; white-space: nowrap">
             <thead>
@@ -560,15 +564,28 @@
         return parts.length > 0 ? parts.join('<br>') : raw.slice(0, 80);
       }
 
+      const POS_PER_PAGE = 6;
+      let posCurrentPage = -1; // -1 = latest page (auto-follow)
+      let posAllRows = [];
+
       function renderPositions(rows) {
         const body = $('positionsBody');
         if (!rows || rows.length === 0) {
           body.innerHTML = '<tr><td colspan="16" class="muted">No positions yet.</td></tr>';
+          $('positionsPager').innerHTML = '';
           return;
         }
 
-        body.innerHTML = rows
-          .slice(-6)
+        posAllRows = rows;
+        const totalPages = Math.ceil(rows.length / POS_PER_PAGE);
+        
+        // If on "latest" (-1) or page exceeds total, go to last page
+        const activePage = (posCurrentPage < 0 || posCurrentPage >= totalPages) ? totalPages - 1 : posCurrentPage;
+
+        const start = activePage * POS_PER_PAGE;
+        const pageRows = rows.slice(start, start + POS_PER_PAGE);
+
+        body.innerHTML = pageRows
           .map((p) => {
             const pnlTxt = p.pnl == null ? '-' : `${fmtUsd(p.pnl)} (${(p.pnl_pct || 0).toFixed(1)}%)`;
             return `
@@ -593,6 +610,39 @@
             `;
           })
           .join('');
+
+        // Render pager
+        const pager = $('positionsPager');
+        if (totalPages <= 1) {
+          pager.innerHTML = `<span class="muted">Page 1 of 1</span>`;
+          return;
+        }
+
+        const isLatest = posCurrentPage < 0 || activePage === totalPages - 1;
+        let pagerHtml = '';
+        
+        // First / Prev buttons
+        pagerHtml += `<button onclick="posGoPage(0)" style="padding:2px 6px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px" ${activePage === 0 ? 'disabled' : ''}>&#171; First</button>`;
+        pagerHtml += `<button onclick="posGoPage(${activePage - 1})" style="padding:2px 6px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px" ${activePage === 0 ? 'disabled' : ''}>&#8249; Prev</button>`;
+
+        // Page numbers (show max 5 around current)
+        const startPage = Math.max(0, activePage - 2);
+        const endPage = Math.min(totalPages - 1, activePage + 2);
+        for (let i = startPage; i <= endPage; i++) {
+          const active = i === activePage;
+          pagerHtml += `<button onclick="posGoPage(${i})" style="padding:2px 8px;font-size:11px;cursor:pointer;border:1px solid ${active ? 'var(--blue)' : 'var(--border)'};background:${active ? 'var(--blue)' : 'var(--card)'};color:${active ? '#fff' : 'var(--fg)'};border-radius:4px;font-weight:${active ? '700' : '400'}">${i + 1}</button>`;
+        }
+
+        // Next / Latest buttons  
+        pagerHtml += `<button onclick="posGoPage(${activePage + 1})" style="padding:2px 6px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px" ${isLatest ? 'disabled' : ''}>Next &#8250;</button>`;
+        pagerHtml += `<button onclick="posGoPage(-1)" style="padding:2px 6px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:${isLatest ? 'var(--blue)' : 'var(--card)'};color:${isLatest ? '#fff' : 'var(--fg)'};border-radius:4px;font-weight:${isLatest ? '700' : '400'}">Latest &#187;</button>`;
+
+        pager.innerHTML = pagerHtml;
+      }
+
+      function posGoPage(page) {
+        posCurrentPage = page;
+        renderPositions(posAllRows);
       }
 
       function parseDecisionReason(reasonRaw) {
