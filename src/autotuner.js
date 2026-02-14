@@ -43,7 +43,7 @@ function loadParams() {
       const saved = JSON.parse(row.value);
       // Merge: use MAX of saved vs default for filter params (they should only get tighter, never looser)
       const merged = JSON.parse(JSON.stringify(defaults));
-      const filterMaxKeys = ['min_ema_dist_bps', 'min_slope_abs', 'min_entry_price', 'entry_window_min'];
+      const filterMaxKeys = ['min_ema_dist_bps', 'min_slope_abs', 'min_entry_price'];
       const filterMinKeys = ['max_entry_price', 'entry_window_max'];
       for (const strat of Object.keys(merged)) {
         if (saved[strat]) {
@@ -157,20 +157,19 @@ function autoTune() {
   }
 
   // === TIMING FILTER ===
-  // Adjust entry window based on where wins vs losses cluster
-  const timingPattern = patterns.find(p => p.type === 'timing' && p.severity === 'high');
-  if (timingPattern && win_stats.avg_seconds_to_end != null && loss_stats.avg_seconds_to_end != null) {
-    if (loss_stats.avg_seconds_to_end < win_stats.avg_seconds_to_end) {
-      // Losses enter later — tighten the minimum (raise it)
-      const newMin = Math.round((loss_stats.avg_seconds_to_end + win_stats.avg_seconds_to_end) / 2);
-      if (newMin > params.ema.entry_window_min && newMin < 170) {
-        const old = params.ema.entry_window_min;
-        params.ema.entry_window_min = newMin;
-        params.session.entry_window_min = newMin;
-        log(`Entry window min: ${old}s → ${newMin}s (losses avg ${loss_stats.avg_seconds_to_end}s, wins avg ${win_stats.avg_seconds_to_end}s)`);
-      }
-    }
-  }
+  // === ENTRY WINDOW === (disabled — manual only; wider window = cheaper entries + better R:R)
+  // const timingPattern = patterns.find(p => p.type === 'timing' && p.severity === 'high');
+  // if (timingPattern && win_stats.avg_seconds_to_end != null && loss_stats.avg_seconds_to_end != null) {
+  //   if (loss_stats.avg_seconds_to_end < win_stats.avg_seconds_to_end) {
+  //     const newMin = Math.round((loss_stats.avg_seconds_to_end + win_stats.avg_seconds_to_end) / 2);
+  //     if (newMin > params.ema.entry_window_min && newMin < 170) {
+  //       const old = params.ema.entry_window_min;
+  //       params.ema.entry_window_min = newMin;
+  //       params.session.entry_window_min = newMin;
+  //       log(`Entry window min: ${old}s → ${newMin}s`);
+  //     }
+  //   }
+  // }
 
   // === EMA DISTANCE ===
   // If losses have smaller distance, increase threshold
@@ -197,26 +196,8 @@ function autoTune() {
   // === WIN OPTIMIZATION: Narrow toward winning entry window ===
   // If wins cluster in a tighter time range, narrow the window to the sweet spot
   if (win_stats && win_stats.count >= 3 && win_stats.avg_seconds_to_end != null) {
-    // Find the optimal entry window from wins — use their range as guide
-    const winMetrics = analysis.wins_detail || [];
-    if (winMetrics.length >= 3) {
-      const winSecs = winMetrics.map(m => m.seconds_to_end).filter(s => s != null).sort((a, b) => a - b);
-      if (winSecs.length >= 3) {
-        // Use p25-p75 of winning entries as ideal window
-        const p25 = winSecs[Math.floor(winSecs.length * 0.25)];
-        const p75 = winSecs[Math.floor(winSecs.length * 0.75)];
-        // Only narrow if the win cluster is tighter than current window
-        if (p25 > params.ema.entry_window_min && p25 < p75) {
-          const newMin = Math.max(params.ema.entry_window_min, Math.round(p25 - 5));
-          if (newMin > params.ema.entry_window_min) {
-            const old = params.ema.entry_window_min;
-            params.ema.entry_window_min = newMin;
-            params.session.entry_window_min = newMin;
-            log(`WIN OPT — Entry window min: ${old}s → ${newMin}s (wins cluster p25=${p25}s)`);
-          }
-        }
-      }
-    }
+    // === WIN ENTRY WINDOW === (disabled — manual only)
+    // Entry window narrowing caused higher entry prices and worse R:R
   }
 
   // === WIN OPTIMIZATION: Favor entry prices that produce best returns ===
