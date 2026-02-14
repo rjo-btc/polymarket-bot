@@ -225,6 +225,16 @@
               <div class="value tiny" id="source">-</div>
             </div>
             <div class="stat">
+              <div class="label">EMA Dist <span id="bpsDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#666;margin-left:4px;vertical-align:middle;"></span></div>
+              <div class="value" id="emaDist">-</div>
+              <div class="muted tiny" id="emaDistMeta"></div>
+            </div>
+            <div class="stat">
+              <div class="label">Slope <span id="slopeDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#666;margin-left:4px;vertical-align:middle;"></span></div>
+              <div class="value" id="emaSlope">-</div>
+              <div class="muted tiny" id="emaSlopeMeta"></div>
+            </div>
+            <div class="stat">
               <div class="label">Total PnL</div>
               <div class="value" id="totalPnl">-</div>
             </div>
@@ -450,6 +460,30 @@
         $('btcNow').textContent = fmtPrice(m.btc_price_now);
         $('btcStart').textContent = fmtPrice(m.btc_price_at_market_start);
         $('source').textContent = m.resolution_source || '-';
+
+        // EMA state bubbles
+        const e = m.ema_state;
+        if (e) {
+          const dist = e.ema_dist_bps;
+          const slope = e.slope_abs;
+          $('emaDist').textContent = dist + ' bps';
+          $('emaSlope').textContent = slope.toFixed(2);
+
+          // BPS dot: green if ≥ long_min_dist (8), yellow if ≥ min (5), red if below
+          const bpsDot = $('bpsDot');
+          if (dist >= e.long_min_dist) { bpsDot.style.background = '#1dd49a'; bpsDot.style.boxShadow = '0 0 6px rgba(29,212,154,.5)'; }
+          else if (dist >= e.min_dist_bps) { bpsDot.style.background = '#f5a623'; bpsDot.style.boxShadow = '0 0 6px rgba(245,166,35,.5)'; }
+          else { bpsDot.style.background = '#e74c3c'; bpsDot.style.boxShadow = '0 0 6px rgba(231,76,60,.5)'; }
+          $('emaDistMeta').textContent = `min ${e.min_dist_bps} · long ${e.long_min_dist}`;
+
+          // Slope dot: green if ≥ long_min_slope (6), yellow if ≥ min (2), red if below
+          const sDot = $('slopeDot');
+          if (slope >= e.long_min_slope) { sDot.style.background = '#1dd49a'; sDot.style.boxShadow = '0 0 6px rgba(29,212,154,.5)'; }
+          else if (slope >= e.min_slope) { sDot.style.background = '#f5a623'; sDot.style.boxShadow = '0 0 6px rgba(245,166,35,.5)'; }
+          else { sDot.style.background = '#e74c3c'; sDot.style.boxShadow = '0 0 6px rgba(231,76,60,.5)'; }
+          $('emaSlopeMeta').textContent = `min ${e.min_slope} · long ${e.long_min_slope}`;
+        }
+
         updateLiveMarketClock();
       }
 

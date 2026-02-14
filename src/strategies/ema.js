@@ -58,6 +58,19 @@ async function evaluate(market, btcPrice) {
 
   const paStr = `PA[dist=${Math.abs(distBps).toFixed(1)} bps,slope=${slope.toFixed(4)},ema20=${fast.toFixed(2)},ema200=${slow.toFixed(2)}]`;
 
+  _latestState = {
+    ema_dist_bps: parseFloat(Math.abs(emaDistBps).toFixed(1)),
+    slope: parseFloat(slope.toFixed(4)),
+    slope_abs: parseFloat(Math.abs(slope).toFixed(4)),
+    ema20: parseFloat(fast.toFixed(2)),
+    ema200: parseFloat(slow.toFixed(2)),
+    min_dist_bps: p.min_ema_dist_bps ?? 5,
+    min_slope: p.min_slope_abs ?? 2,
+    long_min_dist: p.long_min_dist_bps ?? 8,
+    long_min_slope: p.long_min_slope ?? 6,
+    updated_at: new Date().toISOString(),
+  };
+
   const slopeAbs = Math.abs(slope);
   const absEmaDistBps = Math.abs(emaDistBps);
 
@@ -130,4 +143,8 @@ async function evaluate(market, btcPrice) {
   };
 }
 
-module.exports = { evaluate };
+// Expose latest EMA state for dashboard
+let _latestState = null;
+function getLatestState() { return _latestState; }
+
+module.exports = { evaluate, getLatestState };

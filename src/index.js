@@ -8,6 +8,7 @@ const { buildWinProfile, TIER_MULTIPLIERS, TIER_THRESHOLDS } = require('./confid
 const { drainNotifications } = require('./notify');
 const { runAnalysis } = require('./analysis');
 const { getParams, getTuneLog, resetParams, setParam } = require('./autotuner');
+const { getLatestState: getEmaState } = require('./strategies/ema');
 const { getState: getPhenomenaState } = require('./phenomena');
 
 const app = express();
@@ -64,6 +65,7 @@ app.get('/api/market', async (req, res) => {
       btc_price_prev_updated_at: prevBtc.updatedAt,
       btc_price_at_market_start: btcAtStart,
       btc_start_price_source: 'tick_at_or_after',
+      ema_state: getEmaState(),
     });
   } catch (e) {
     console.error('GET /api/market error:', e);
