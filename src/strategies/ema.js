@@ -48,15 +48,20 @@ async function evaluate(market, btcPrice) {
     return { ...base, action: 'SKIP', side: null, reason: 'Strategy disabled by auto-tuner' };
   }
 
-  // Only enter in dynamic window
-  if (secsToEnd < p.entry_window_min || secsToEnd > p.entry_window_max) {
+  // Entry windows: early (240-270s) for predictive signals, standard (150-240s) for confirmed
+  const earlyWindowMax = p.early_window_max ?? 270;
+  const earlyWindowMin = p.entry_window_max ?? 240;  // early window ends where standard begins
+  
+  if (secsToEnd < p.entry_window_min || secsToEnd > earlyWindowMax) {
     return {
       ...base,
       action: 'SKIP',
       side: null,
-      reason: `Outside entry window (${secsToEnd}s to end, need ${p.entry_window_min}-${p.entry_window_max}s)`,
+      reason: `Outside entry window (${secsToEnd}s to end, need ${p.entry_window_min}-${earlyWindowMax}s)`,
     };
   }
+
+  const isEarlyWindow = secsToEnd > p.entry_window_max;  // in the early predictive zone
 
   const klines = await fetchKlines(250);
   if (klines.length < 200) {
@@ -94,12 +99,57 @@ async function evaluate(market, btcPrice) {
     min_slope: p.min_slope_abs ?? 2,
     long_min_dist: p.long_min_dist_bps ?? 8,
     long_min_slope: p.long_min_slope ?? 6,
+    early_signals: (p.early_signals_enabled ?? true),
+    entry_window: `${p.entry_window_min}-${p.entry_window_max}s (early: ${p.entry_window_max}-${p.early_window_max ?? 270}s)`,
     updated_at: new Date().toISOString(),
   };
 
   const slopeAbs = Math.abs(slope);
   const absEmaDistBps = Math.abs(emaDistBps);
 
+  // === EARLY ENTRY SIGNALS (240-270s before end) ===
+  // These fire before standard EMA alignment to get cheaper entries
+  if (isEarlyWindow && (p.early_signals_enabled ?? true)) {
+    const fastPrev2 = emaFast.length > 2 ? emaFast[emaFast.length - 3] : fastPrev;
+    const slopePrev = fastPrev - fastPrev2;
+    
+    // 1. MOMENTUM BURST: strong candle body suggesting continuation
+    const lastCandle = klines[klines.length - 1];
+    const body = lastCandle.close - lastCandle.open;
+    const bodyBps = Math.abs(body / lastCandle.open * 10000);
+    const range = lastCandle.high - lastCandle.low;
+    const bodyRatio = range > 0 ? Math.abs(body) / range : 0;
+    
+    if (bodyBps >= 5 && bodyRatio >= 0.7) {
+      const emaDist = ((fast - slow) / slow) * 10000;
+      if (body > 0 && emaDist > -3 && currentRSI > 45) {
+        return { ...base, action: 'ENTER', side: 'up', 
+          reason: `EARLY MOMENTUM BURST UP: body ${bodyBps.toFixed(1)} bps (${(bodyRatio*100).toFixed(0)}% body), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
+      }
+      if (body < 0 && emaDist < 3 && currentRSI < 55) {
+        return { ...base, action: 'ENTER', side: 'down',
+          reason: `EARLY MOMENTUM BURST DOWN: body ${bodyBps.toFixed(1)} bps (${(bodyRatio*100).toFixed(0)}% body), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
+      }
+    }
+    
+    // 2. SLOPE ACCELERATION: EMA9 slope getting steeper each candle
+    const accel1 = Math.abs(slope) - Math.abs(slopePrev);
+    if (accel1 > 0 && slopeAbs >= 1) {
+      if (slope > 0 && fast > slow && currentRSI > 45) {
+        return { ...base, action: 'ENTER', side: 'up',
+          reason: `EARLY SLOPE ACCEL UP: slope ${slope.toFixed(4)} accelerating (Δ${accel1.toFixed(4)}), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
+      }
+      if (slope < 0 && fast < slow && currentRSI < 55) {
+        return { ...base, action: 'ENTER', side: 'down',
+          reason: `EARLY SLOPE ACCEL DOWN: slope ${slope.toFixed(4)} accelerating (Δ${accel1.toFixed(4)}), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
+      }
+    }
+    
+    // No early signal found — don't fall through to standard checks (too early for those)
+    return { ...base, action: 'SKIP', side: null, reason: `Early window (${secsToEnd}s) — no momentum burst or slope acceleration; ${paStr}` };
+  }
+
+  // === STANDARD ENTRY SIGNALS (150-240s before end) ===
   // Direction-specific filters:
   // LONGS: require strong signals (dist >= 8, slope >= 6) — weak longs lose
   // SHORTS: allow weak (<5) OR strong (>=8) dist — mid-range (5-8) is a death zone
