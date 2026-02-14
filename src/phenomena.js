@@ -316,10 +316,29 @@ function onTradeResolved(trade) {
   saveState();
 }
 
+// Hard block config
+const HARD_BLOCK_AFTER = 4;          // consecutive same-side losses before hard block
+const HARD_BLOCK_DURATION_MS = 15 * 60 * 1000;  // 15 min hard block
+
 // Called before entering a trade — returns combined guard result
 function checkGuards(signal) {
   const ctx = { phenomenaState };
   const results = [];
+
+  // === HARD BLOCK: ≥4 consecutive same-side losses → block that side for 15 min ===
+  const ds = phenomenaState.directional_spam || {};
+  if (ds.streak_side === signal.side && (ds.loss_streak || 0) >= HARD_BLOCK_AFTER) {
+    const lastAt = ds.last_trade_at || 0;
+    const elapsed = Date.now() - lastAt;
+    if (elapsed < HARD_BLOCK_DURATION_MS) {
+      const minsLeft = Math.ceil((HARD_BLOCK_DURATION_MS - elapsed) / 60000);
+      return {
+        block: true,
+        reason: `HARD BLOCK: ${ds.loss_streak} consecutive ${signal.side.toUpperCase()} losses — side blocked for ${minsLeft} more min`,
+        phenomena: [{ key: 'hard_block', block: true }],
+      };
+    }
+  }
 
   // Decay cooldowns for ema_lag_reversal
   if (phenomenaState.ema_lag_reversal?.cooldown_remaining > 0) {

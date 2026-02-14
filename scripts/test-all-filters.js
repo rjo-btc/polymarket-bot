@@ -321,6 +321,49 @@ test('Expensive entry: 2 losses → temp cap 0.50', () => {
   assert(r.tighten.max_entry_override === 0.50, `Expected 0.50 cap, got ${r.tighten.max_entry_override}`);
 });
 
+// Hard block after 4 consecutive same-side losses
+test('Hard block: 4 consec losses → blocks that side', () => {
+  const { checkGuards, resetState: resetPhenomena } = require('../src/phenomena');
+  // Manually set directional spam state
+  const phenomena = require('../src/phenomena');
+  // We need to manipulate state directly — use the phenomena module's internal state
+  // Reset first, then simulate
+  resetPhenomena();
+  // Simulate 4 consecutive UP losses by calling onTradeResolved
+  const { onTradeResolved } = phenomena;
+  for (let i = 0; i < 4; i++) {
+    onTradeResolved({ id: 200+i, side: 'up', pnl: -100, entry_price: 0.40, btc_price_at_start: 70000, btc_price_at_end: 70000 });
+  }
+  const r = checkGuards({ side: 'up', strategy: 'ema', entry_price: 0.40 });
+  assert(r.block === true, `Should hard block after 4 consec UP losses, got block=${r.block}`);
+  assert(r.reason.includes('HARD BLOCK'), `Reason should say HARD BLOCK, got: ${r.reason}`);
+  resetPhenomena();
+});
+
+test('Hard block: does NOT block opposite side', () => {
+  const { checkGuards, resetState: resetPhenomena, onTradeResolved } = require('../src/phenomena');
+  resetPhenomena();
+  for (let i = 0; i < 4; i++) {
+    onTradeResolved({ id: 210+i, side: 'up', pnl: -100, entry_price: 0.40, btc_price_at_start: 70000, btc_price_at_end: 70000 });
+  }
+  const r = checkGuards({ side: 'down', strategy: 'ema', entry_price: 0.40 });
+  assert(r.block !== true, `Should NOT block DOWN side, got block=${r.block}`);
+  resetPhenomena();
+});
+
+test('Hard block: win clears the block', () => {
+  const { checkGuards, resetState: resetPhenomena, onTradeResolved } = require('../src/phenomena');
+  resetPhenomena();
+  for (let i = 0; i < 4; i++) {
+    onTradeResolved({ id: 220+i, side: 'up', pnl: -100, entry_price: 0.40, btc_price_at_start: 70000, btc_price_at_end: 70000 });
+  }
+  // Win on same side should clear
+  onTradeResolved({ id: 224, side: 'up', pnl: 100, entry_price: 0.40, btc_price_at_start: 70000, btc_price_at_end: 70100 });
+  const r = checkGuards({ side: 'up', strategy: 'ema', entry_price: 0.40 });
+  assert(r.block !== true, `Win should clear hard block, got block=${r.block}`);
+  resetPhenomena();
+});
+
 // Chop guard
 test('Chop guard: 2 chop losses → 2x dist', () => {
   const state = { flat_market_chop: { recent_chop_losses: 2, last_triggered: Date.now() } };
