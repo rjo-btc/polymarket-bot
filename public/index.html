@@ -1081,16 +1081,22 @@
               if (effective >= threshold) { detail += ' → cap 0.50'; multiplier = 1; }
               else if (raw > 0) detail += ' → decayed, clear';
             } else if (p.key === 'directional_spam') {
-              raw = state.current_streak || 0;
+              const winStreak = state.win_streak || 0;
+              raw = state.loss_streak || 0;
               const spamMin = state.last_trade_at ? Math.floor((Date.now() - state.last_trade_at) / 60000) : 0;
               const spamDecay = Math.floor(spamMin / 5);
-              effective = Math.max(1, raw - spamDecay);
+              effective = Math.max(0, raw - spamDecay);
               threshold = 2;
               side = state.streak_side || '';
-              if (effective >= threshold) multiplier = Math.min(2.0, 1 + (effective - 1) * 0.25);
-              detail = side ? `${side.toUpperCase()} · ${raw} trades → eff. ${effective}` : '';
-              if (multiplier) detail += ` → ${multiplier.toFixed(2)}x signals`;
-              else if (raw > 0) detail += ' → decayed, clear';
+              if (winStreak >= 2) {
+                detail = side ? `${side.toUpperCase()} · ${winStreak} WIN streak 🔥 — trend confirmed, no penalty` : '';
+              } else if (effective >= threshold) {
+                multiplier = Math.min(2.0, 1 + (effective - 1) * 0.25);
+                detail = side ? `${side.toUpperCase()} · ${raw} LOSS streak → eff. ${effective} → ${multiplier.toFixed(2)}x signals` : '';
+              } else {
+                detail = side ? `${side.toUpperCase()} · W${winStreak}/L${raw}` : '';
+                if (raw > 0) detail += ' → decayed, clear';
+              }
             }
 
             const isGuarding = effective >= threshold && raw > 0;

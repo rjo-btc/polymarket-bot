@@ -136,32 +136,39 @@ const PHENOMENA = {
   },
   directional_spam: {
     name: 'Directional Spam',
-    description: 'Repeated trades in the same direction — each consecutive same-direction trade requires increasingly strong signals since the move has already been playing out.',
+    description: 'Repeated LOSING trades in the same direction — consecutive losses suggest the trend thesis is wrong. Consecutive WINS reduce restrictions (valid trend).',
     detect(trade, ctx) {
-      // Always track — this isn't about wins/losses, it's about repeated direction
+      // Only detect on losses — winning same-direction trades are trend-riding, not spam
+      if (trade.pnl >= 0) return false;
       const recent = ctx.recentResolved;
       if (recent.length < 2) return false;
       const prev = recent[recent.length - 2];
-      return prev.side === trade.side;
+      return prev.side === trade.side && prev.pnl < 0;
     },
     guard(signal, ctx) {
       const state = ctx.phenomenaState.directional_spam || {};
-      const streak = state.current_streak || 0;
+      const lossStreak = state.loss_streak || 0;
       const streakSide = state.streak_side;
       const lastTradeAt = state.last_trade_at || 0;
+      const winStreak = state.win_streak || 0;
       
-      if (streakSide === signal.side && streak >= 2) {
+      // Consecutive wins in this direction = trend confirmed, EASE restrictions
+      if (streakSide === signal.side && winStreak >= 2) {
+        return { block: false }; // trend confirmed, no penalty
+      }
+      
+      if (streakSide === signal.side && lossStreak >= 2) {
         // Time decay: every 5 minutes since last trade reduces effective streak by 1
         const minutesSinceLast = (Date.now() - lastTradeAt) / 60000;
         const decaySteps = Math.floor(minutesSinceLast / 5);
-        const effectiveStreak = Math.max(1, streak - decaySteps);
+        const effectiveStreak = Math.max(1, lossStreak - decaySteps);
         
         if (effectiveStreak >= 2) {
           const multiplier = Math.min(2.0, 1 + (effectiveStreak - 1) * 0.25);
           return {
             block: false,
             tighten: { min_slope_multiplier: multiplier, min_dist_multiplier: multiplier },
-            reason: `DIRECTIONAL_SPAM: ${streak} ${signal.side.toUpperCase()} trades (effective ${effectiveStreak} after ${decaySteps > 0 ? decaySteps * 5 + 'min decay' : 'no decay'}) — requiring ${multiplier.toFixed(2)}x signal strength`,
+            reason: `DIRECTIONAL_SPAM: ${lossStreak} consecutive ${signal.side.toUpperCase()} LOSSES (effective ${effectiveStreak} after ${decaySteps > 0 ? decaySteps * 5 + 'min decay' : 'no decay'}) — requiring ${multiplier.toFixed(2)}x signal strength`,
           };
         }
       }
@@ -259,14 +266,24 @@ function onTradeResolved(trade) {
     }
   }
 
-  // Always update directional spam streak (regardless of detect)
+  // Update directional spam streak — track wins and losses separately
   if (!phenomenaState.directional_spam) phenomenaState.directional_spam = {};
   const ds = phenomenaState.directional_spam;
   if (ds.streak_side === trade.side) {
-    ds.current_streak = (ds.current_streak || 1) + 1;
+    // Same direction — update win/loss streaks
+    if (trade.pnl >= 0) {
+      ds.win_streak = (ds.win_streak || 0) + 1;
+      ds.loss_streak = 0; // win breaks loss streak
+      console.log(`[Phenomena] Directional: ${trade.side.toUpperCase()} WIN streak ${ds.win_streak} — trend confirmed`);
+    } else {
+      ds.loss_streak = (ds.loss_streak || 0) + 1;
+      ds.win_streak = 0; // loss breaks win streak
+    }
   } else {
+    // Direction changed — reset everything
     ds.streak_side = trade.side;
-    ds.current_streak = 1;
+    ds.win_streak = trade.pnl >= 0 ? 1 : 0;
+    ds.loss_streak = trade.pnl < 0 ? 1 : 0;
   }
   ds.last_trade_at = Date.now();
 
