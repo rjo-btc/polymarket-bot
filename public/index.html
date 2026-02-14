@@ -619,7 +619,6 @@
         const nextDisabled = activePage >= totalPages - 1;
 
         pager.innerHTML = `
-          <span style="color:var(--muted);font-size:12px;border:1px solid var(--border);padding:3px 10px;border-radius:4px">${rangeStart} – ${rangeEnd} of ${rows.length}</span>
           <button onclick="posGoPage(${activePage - 1})" style="padding:3px 8px;font-size:13px;cursor:${prevDisabled?'default':'pointer'};border:1px solid var(--border);background:var(--card);color:${prevDisabled?'var(--border)':'var(--fg)'};border-radius:4px;line-height:1" ${prevDisabled?'disabled':''}>&#8249;</button>
           <button onclick="posGoPage(${activePage + 1})" style="padding:3px 8px;font-size:13px;cursor:${nextDisabled?'default':'pointer'};border:1px solid var(--border);background:var(--card);color:${nextDisabled?'var(--border)':'var(--fg)'};border-radius:4px;line-height:1" ${nextDisabled?'disabled':''}>&#8250;</button>
         `;
