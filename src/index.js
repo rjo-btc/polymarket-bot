@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { getAllPositions, getOpenPositions, insertPosition, getRecentDecisions, updatePostMortem, getRecentExecutions, getAllExecutions } = require('./db');
+const { db, getAllPositions, getOpenPositions, insertPosition, getRecentDecisions, updatePostMortem, getRecentExecutions, getAllExecutions } = require('./db');
 const { findCurrentMarket, fetchTokenPrices, getCachedMarket } = require('./market');
 const { getBtcPrice, getPrevBtcPrice, startPricePolling, fetchBtcPrice } = require('./btcPrice');
 const { startTrader, getBotStatus } = require('./trader');
@@ -377,6 +377,19 @@ app.post('/api/phenomena/reset', (req, res) => {
 app.get('/api/breaker', (req, res) => {
   try {
     res.json(getBreakerState());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/backfill-versions', (req, res) => {
+  try {
+    // Force backfill filter_version based on entry_reason content
+    const before = db.prepare(`SELECT id, filter_version FROM positions`).all();
+    db.exec(`UPDATE positions SET filter_version = 3 WHERE entry_reason LIKE '%ema9=%'`);
+    db.exec(`UPDATE positions SET filter_version = 2 WHERE filter_version IS NULL AND entry_reason LIKE '%EMA20%'`);
+    db.exec(`UPDATE positions SET filter_version = 2 WHERE filter_version = 0 AND entry_reason LIKE '%EMA20%' AND entry_reason NOT LIKE '%ema9=%'`);
+    db.exec(`UPDATE positions SET filter_version = 0 WHERE filter_version IS NULL`);
+    const after = db.prepare(`SELECT id, filter_version FROM positions ORDER BY id`).all();
+    res.json({ ok: true, positions: after });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
