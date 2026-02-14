@@ -134,14 +134,28 @@ async function evaluate(market, btcPrice) {
     
     // 2. SLOPE ACCELERATION: EMA9 slope getting steeper each candle
     const accel1 = Math.abs(slope) - Math.abs(slopePrev);
+    // Count consecutive accelerating candles for future analysis
+    let consecAccel = 0;
+    if (accel1 > 0) {
+      consecAccel = 1;
+      for (let j = 2; j <= 5; j++) {
+        const prev = emaFast.length > j + 1 ? emaFast[emaFast.length - j] : null;
+        const prevPrev = emaFast.length > j + 2 ? emaFast[emaFast.length - j - 1] : null;
+        if (!prev || !prevPrev) break;
+        const s1 = emaFast[emaFast.length - j + 1] - prev;
+        const s2 = prev - prevPrev;
+        if (Math.abs(s1) - Math.abs(s2) > 0) consecAccel++;
+        else break;
+      }
+    }
     if (accel1 > 0 && slopeAbs >= 1) {
       if (slope > 0 && fast > slow && currentRSI > 45) {
         return { ...base, action: 'ENTER', side: 'up',
-          reason: `EARLY SLOPE ACCEL UP: slope ${slope.toFixed(4)} accelerating (Δ${accel1.toFixed(4)}), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
+          reason: `EARLY SLOPE ACCEL UP: slope ${slope.toFixed(4)} accelerating (Δ${accel1.toFixed(4)}, ${consecAccel} consec), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
       }
       if (slope < 0 && fast < slow && currentRSI < 55) {
         return { ...base, action: 'ENTER', side: 'down',
-          reason: `EARLY SLOPE ACCEL DOWN: slope ${slope.toFixed(4)} accelerating (Δ${accel1.toFixed(4)}), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
+          reason: `EARLY SLOPE ACCEL DOWN: slope ${slope.toFixed(4)} accelerating (Δ${accel1.toFixed(4)}, ${consecAccel} consec), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
       }
     }
     
