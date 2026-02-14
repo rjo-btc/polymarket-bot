@@ -116,6 +116,33 @@ const PHENOMENA = {
       return { block: false };
     },
   },
+  directional_spam: {
+    name: 'Directional Spam',
+    description: 'Repeated trades in the same direction — each consecutive same-direction trade requires increasingly strong signals since the move has already been playing out.',
+    detect(trade, ctx) {
+      // Always track — this isn't about wins/losses, it's about repeated direction
+      const recent = ctx.recentResolved;
+      if (recent.length < 2) return false;
+      const prev = recent[recent.length - 2];
+      return prev.side === trade.side;
+    },
+    guard(signal, ctx) {
+      const state = ctx.phenomenaState.directional_spam || {};
+      const streak = state.current_streak || 0;
+      const streakSide = state.streak_side;
+      
+      if (streakSide === signal.side && streak >= 2) {
+        // Escalating multiplier: 2 in a row = 1.25x, 3 = 1.5x, 4 = 1.75x, 5+ = 2x
+        const multiplier = Math.min(2.0, 1 + (streak - 1) * 0.25);
+        return {
+          block: false,
+          tighten: { min_slope_multiplier: multiplier, min_dist_multiplier: multiplier },
+          reason: `DIRECTIONAL_SPAM: ${streak} consecutive ${signal.side.toUpperCase()} trades — requiring ${multiplier.toFixed(2)}x signal strength`,
+        };
+      }
+      return { block: false };
+    },
+  },
 };
 
 // --- State Management ---
@@ -189,6 +216,8 @@ function onTradeResolved(trade) {
           s.decay_after = Date.now() + 60 * 60 * 1000;
         }
 
+        // directional_spam state is tracked globally (outside detect loop)
+
         phenomenaLog.push({
           ts: Date.now(),
           phenomenon: key,
@@ -203,6 +232,16 @@ function onTradeResolved(trade) {
     } catch (e) {
       console.error(`[Phenomena] Error detecting ${key}:`, e.message);
     }
+  }
+
+  // Always update directional spam streak (regardless of detect)
+  if (!phenomenaState.directional_spam) phenomenaState.directional_spam = {};
+  const ds = phenomenaState.directional_spam;
+  if (ds.streak_side === trade.side) {
+    ds.current_streak = (ds.current_streak || 1) + 1;
+  } else {
+    ds.streak_side = trade.side;
+    ds.current_streak = 1;
   }
 
   // Decay cooldowns on wins
