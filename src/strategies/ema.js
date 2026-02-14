@@ -122,7 +122,7 @@ async function evaluate(market, btcPrice) {
     
     if (bodyBps >= 5 && bodyRatio >= 0.7 && absEmaDistBps >= (p.min_ema_dist_bps || 5)) {
       const emaDist = ((fast - slow) / slow) * 10000;
-      if (body > 0 && emaDist > -3 && currentRSI > 45) {
+      if (body > 0 && emaDist > -3 && currentRSI > 45 && currentRSI < (p.rsi_long_max ?? 75)) {
         return { ...base, action: 'ENTER', side: 'up', 
           reason: `EARLY MOMENTUM BURST UP: body ${bodyBps.toFixed(1)} bps (${(bodyRatio*100).toFixed(0)}% body), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
       }
@@ -149,7 +149,7 @@ async function evaluate(market, btcPrice) {
       }
     }
     if (accel1 > 0 && slopeAbs >= 1 && absEmaDistBps >= (p.min_ema_dist_bps || 5)) {
-      if (slope > 0 && fast > slow && currentRSI > 45) {
+      if (slope > 0 && fast > slow && currentRSI > 45 && currentRSI < (p.rsi_long_max ?? 75)) {
         return { ...base, action: 'ENTER', side: 'up',
           reason: `EARLY SLOPE ACCEL UP: slope ${slope.toFixed(4)} accelerating (Δ${accel1.toFixed(4)}, ${consecAccel} consec), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
       }
@@ -176,6 +176,7 @@ async function evaluate(market, btcPrice) {
 
   // RSI confirmation thresholds
   const RSI_LONG_MIN = p.rsi_long_min ?? 50;
+  const RSI_LONG_MAX = p.rsi_long_max ?? 75;  // overbought cap — RSI > 75 = reversal risk
   const RSI_SHORT_MAX = p.rsi_short_max ?? 50;
 
   // LONG: price > EMAfast > EMAslow, strong signal required + RSI confirmation
@@ -184,6 +185,7 @@ async function evaluate(market, btcPrice) {
     if (absEmaDistBps < LONG_MIN_DIST) reasons.push(`dist ${absEmaDistBps.toFixed(1)} < ${LONG_MIN_DIST} bps (long requires strong)`);
     if (slopeAbs < LONG_MIN_SLOPE) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${LONG_MIN_SLOPE} (long requires strong)`);
     if (currentRSI < RSI_LONG_MIN) reasons.push(`RSI ${currentRSI.toFixed(1)} < ${RSI_LONG_MIN} (no momentum confirmation)`);
+    if (currentRSI > RSI_LONG_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_LONG_MAX} (overbought — reversal risk)`);
     if (reasons.length === 0) {
       return {
         ...base,
