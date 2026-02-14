@@ -75,6 +75,7 @@ async function resolveExpiredPositions() {
         entry_price: pos.entry_price,
         strategy: pos.strategy,
         btc_price_at_start: btcStart,
+        btc_price_at_end: btcEnd,
         btc_price_at_entry: pos.btc_price_at_entry,
         filter_version: pos.filter_version,
       });
@@ -120,9 +121,10 @@ function buildLossExplanation(pos, btcStart, btcEnd, btcWentUp, pnl) {
   lines.push('📊 Signal Quality:');
   const params = getParams();
   const tp = params.ema || {};
-  if (pa.dist !== undefined) {
-    const distOk = Math.abs(pa.dist) >= (tp.min_ema_dist_bps || 5);
-    lines.push(`  EMA dist: ${Math.abs(pa.dist).toFixed(1)} bps ${distOk ? '✅' : '⚠️ weak'} (min: ${tp.min_ema_dist_bps || 5})`);
+  const emaDistVal = pa.edist !== undefined ? pa.edist : pa.dist;
+  if (emaDistVal !== undefined) {
+    const distOk = Math.abs(emaDistVal) >= (tp.min_ema_dist_bps || 5);
+    lines.push(`  EMA dist: ${Math.abs(emaDistVal).toFixed(1)} bps ${distOk ? '✅' : '⚠️ weak'} (min: ${tp.min_ema_dist_bps || 5})`);
   }
   if (pa.slope !== undefined) {
     const slopeOk = Math.abs(pa.slope) >= (tp.min_slope_abs || 2);

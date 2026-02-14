@@ -85,10 +85,10 @@ const PHENOMENA = {
     description: 'BTC is range-bound, EMAs are too close together. Signals are noise, not trend.',
     detect(trade, ctx) {
       if (trade.pnl >= 0) return false;
-      // Check if the BTC move was tiny (< 30 bps between start and end)
+      // Check if the BTC move was tiny (< 15 bps between start and end)
       const btcStart = trade.btc_price_at_start;
-      const btcEnd = trade.btc_price_at_entry; // approximate
-      if (!btcStart) return false;
+      const btcEnd = trade.btc_price_at_end; // actual end price from resolution
+      if (!btcStart || !btcEnd) return false;
       const moveBps = Math.abs((btcEnd - btcStart) / btcStart) * 10000;
       return moveBps < 15; // very flat
     },

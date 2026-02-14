@@ -84,7 +84,7 @@ async function evaluate(market, btcPrice) {
   const emaDistBps = ((fast - slow) / slow) * 10000;
   const currentRSI = rsi[rsi.length - 1];
 
-  const paStr = `PA[dist=${Math.abs(distBps).toFixed(1)} bps,slope=${slope.toFixed(4)},ema${fastPeriod}=${fast.toFixed(2)},ema${slowPeriod}=${slow.toFixed(2)},rsi=${currentRSI.toFixed(1)}]`;
+  const paStr = `PA[dist=${Math.abs(distBps).toFixed(1)} bps,edist=${Math.abs(emaDistBps).toFixed(1)} bps,slope=${slope.toFixed(4)},ema${fastPeriod}=${fast.toFixed(2)},ema${slowPeriod}=${slow.toFixed(2)},rsi=${currentRSI.toFixed(1)}]`;
 
   _latestState = {
     ema_dist_bps: parseFloat(Math.abs(emaDistBps).toFixed(1)),
@@ -120,7 +120,7 @@ async function evaluate(market, btcPrice) {
     const range = lastCandle.high - lastCandle.low;
     const bodyRatio = range > 0 ? Math.abs(body) / range : 0;
     
-    if (bodyBps >= 5 && bodyRatio >= 0.7) {
+    if (bodyBps >= 5 && bodyRatio >= 0.7 && absEmaDistBps >= (p.min_ema_dist_bps || 5)) {
       const emaDist = ((fast - slow) / slow) * 10000;
       if (body > 0 && emaDist > -3 && currentRSI > 45) {
         return { ...base, action: 'ENTER', side: 'up', 
@@ -148,7 +148,7 @@ async function evaluate(market, btcPrice) {
         else break;
       }
     }
-    if (accel1 > 0 && slopeAbs >= 1) {
+    if (accel1 > 0 && slopeAbs >= 1 && absEmaDistBps >= (p.min_ema_dist_bps || 5)) {
       if (slope > 0 && fast > slow && currentRSI > 45) {
         return { ...base, action: 'ENTER', side: 'up',
           reason: `EARLY SLOPE ACCEL UP: slope ${slope.toFixed(4)} accelerating (Δ${accel1.toFixed(4)}, ${consecAccel} consec), RSI ${currentRSI.toFixed(1)}; ${paStr}` };

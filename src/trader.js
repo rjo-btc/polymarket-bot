@@ -196,10 +196,12 @@ async function traderLoop() {
                 }
                 if (guardResult.tighten.min_dist_multiplier) {
                   const requiredDist = (tp2.min_ema_dist_bps || 5) * guardResult.tighten.min_dist_multiplier;
-                  const distMatch = (decision.reason || '').match(/dist=([.0-9]+)/);
-                  const actualDist = distMatch ? parseFloat(distMatch[1]) : 0;
+                  // Use edist (EMA-to-EMA dist) if available, fall back to dist (price-to-EMA)
+                  const edistMatch = (decision.reason || '').match(/edist=([.0-9]+)/);
+                  const distMatch = (decision.reason || '').match(/(?<![e])dist=([.0-9]+)/);
+                  const actualDist = edistMatch ? parseFloat(edistMatch[1]) : (distMatch ? parseFloat(distMatch[1]) : 0);
                   if (actualDist < requiredDist) {
-                    console.log(`[Trader] PHENOMENA TIGHTEN: dist ${actualDist.toFixed(1)} < required ${requiredDist.toFixed(1)} — ${guardResult.reasons.join('; ')}`);
+                    console.log(`[Trader] PHENOMENA TIGHTEN: edist ${actualDist.toFixed(1)} < required ${requiredDist.toFixed(1)} — ${guardResult.reasons.join('; ')}`);
                     continue;
                   }
                 }
