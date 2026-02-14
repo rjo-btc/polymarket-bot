@@ -644,6 +644,79 @@
       let posCurrentPage = 0;
       let posAllRows = [];
 
+      // Current filter version — trades below this are "old strategy"
+      const CURRENT_FILTER_V = 3;
+
+      // Retroactively check if a trade would be blocked by current filters
+      function getTradeFlags(p) {
+        const reason = p.entry_reason || '';
+        const fv = p.filter_version;
+        const side = p.side;
+
+        // Parse PA string
+        const pa = {};
+        const m = reason.match(/PA\[([^\]]+)\]/);
+        if (m) {
+          m[1].split(',').forEach(part => {
+            const [k, v] = part.split('=').map(s => s.trim());
+            if (k && v) {
+              const cleaned = v.replace(/\s*bps\s*$/i, '').trim();
+              pa[k] = isNaN(cleaned) ? v : parseFloat(cleaned);
+            }
+          });
+        }
+
+        const dist = pa.dist ?? 99;
+        const edist = pa.edist ?? 99;
+        const slope = Math.abs(pa.slope ?? 99);
+        const rsi = pa.rsi ?? 50;
+        const isEarly = reason.includes('SLOPE ACCEL') || reason.includes('MOMENTUM BURST');
+        const isLongStd = reason.includes('LONG signal');
+        const isShortStd = reason.includes('SHORT signal');
+
+        // Version badge
+        let versionBadge = '';
+        if (fv != null && fv < CURRENT_FILTER_V) {
+          versionBadge = `<span title="Strategy v${fv} (current: v${CURRENT_FILTER_V})" style="font-size:9px;padding:1px 4px;border-radius:3px;background:#665;color:#ee9;margin-left:3px;cursor:help">v${fv}</span>`;
+        } else if (fv == null || fv === 0) {
+          versionBadge = `<span title="Pre-filter era (no version tracked)" style="font-size:9px;padding:1px 4px;border-radius:3px;background:#665;color:#ee9;margin-left:3px;cursor:help">v0</span>`;
+        }
+
+        // Check current filters — would this trade be blocked today?
+        const violations = [];
+
+        // Early signals: price-to-EMA9 dist must be >= 5 bps
+        if (isEarly && dist < 5) violations.push(`dist ${dist.toFixed(1)} < 5 bps`);
+
+        // Standard longs: edist >= 8, slope >= 6, RSI 50-75
+        if (isLongStd) {
+          if (edist < 8) violations.push(`edist ${edist.toFixed(1)} < 8`);
+          if (slope < 6) violations.push(`slope ${slope.toFixed(1)} < 6`);
+          if (rsi < 50) violations.push(`RSI ${rsi} < 50`);
+        }
+
+        // All longs: RSI < 75
+        if (side === 'up' && rsi > 75) violations.push(`RSI ${rsi} > 75`);
+
+        // Standard shorts: dead zone (edist 5-8 or slope 3-6), RSI < 50
+        if (isShortStd) {
+          if (edist >= 5 && edist < 8) violations.push(`edist ${edist.toFixed(1)} in dead zone`);
+          if (slope >= 3 && slope < 6) violations.push(`slope ${slope.toFixed(1)} in dead zone`);
+          if (rsi > 50) violations.push(`RSI ${rsi} > 50`);
+        }
+
+        // Entry price > 0.65
+        if (p.entry_price > 0.65) violations.push(`entry ${p.entry_price} > 0.65`);
+
+        let flagsBadge = '';
+        if (violations.length > 0) {
+          const tip = violations.join('\\n');
+          flagsBadge = `<span title="${tip}" style="font-size:9px;padding:1px 4px;border-radius:3px;background:#733;color:#faa;margin-left:3px;cursor:help;display:inline-block;margin-top:2px">🚫 BLOCKED</span>`;
+        }
+
+        return { versionBadge, flagsBadge };
+      }
+
       function renderPositions(rows) {
         const body = $('positionsBody');
         if (!rows || rows.length === 0) {
@@ -665,9 +738,11 @@
         body.innerHTML = pageRows
           .map((p) => {
             const pnlTxt = p.pnl == null ? '-' : `${fmtUsd(p.pnl)} (${(p.pnl_pct || 0).toFixed(1)}%)`;
+            const { versionBadge, flagsBadge } = getTradeFlags(p);
+            const rowStyle = (p.filter_version != null && p.filter_version < 3) ? 'opacity:0.65;' : '';
             return `
-              <tr>
-                <td>${p.id}</td>
+              <tr style="${rowStyle}">
+                <td>${p.id} ${versionBadge}</td>
                 <td>${(p.strategy || '-').toUpperCase()}</td>
                 <td>${p.side.toUpperCase()}</td>
                 <td>${new Date(p.entered_at).toLocaleTimeString()}</td>
@@ -680,7 +755,7 @@
                 <td>${fmtPrice(p.btc_price_now)}</td>
                 <td>${fmtProb(p.mark_price)}</td>
                 <td class="${pnlClass(p.pnl)}">${pnlTxt}</td>
-                <td><span class="badge">${p.status}</span></td>
+                <td><span class="badge">${p.status}</span>${flagsBadge}</td>
                 <td class="tiny" style="white-space:normal">${fmtReason(p.entry_reason)}</td>
                 <td class="tiny" style="white-space:normal">${fmtPostMortem(p.post_mortem)}</td>
               </tr>

@@ -50,6 +50,23 @@ db.exec(`
 // Add filter_version column if missing (migration for existing DBs)
 try { db.exec(`ALTER TABLE positions ADD COLUMN filter_version INTEGER DEFAULT 0`); } catch(e) { /* already exists */ }
 
+// Backfill null filter_version based on entry_reason content
+try {
+  const nullCount = db.prepare(`SELECT COUNT(*) as c FROM positions WHERE filter_version IS NULL OR filter_version = 0`).get().c;
+  if (nullCount > 0) {
+    // v3 = EMA9 + RSI14 (trade #21+): entry_reason contains 'ema9='
+    db.exec(`UPDATE positions SET filter_version = 3 WHERE (filter_version IS NULL OR filter_version = 0) AND entry_reason LIKE '%ema9=%'`);
+    // v2 = slope 2.0 + dist 3 + entry 0.65 (trades 1-20 all had EMA20, basic filters)
+    // v0 = no filters at all (shouldn't exist on Railway, all trades had some filtering)
+    // Remaining EMA20-only trades = v2
+    db.exec(`UPDATE positions SET filter_version = 2 WHERE (filter_version IS NULL OR filter_version = 0) AND entry_reason LIKE '%EMA20%'`);
+    // Anything still null = v0
+    db.exec(`UPDATE positions SET filter_version = 0 WHERE filter_version IS NULL`);
+    const updated = db.prepare(`SELECT COUNT(*) as c FROM positions WHERE filter_version = 3`).get().c;
+    console.log(`[DB] Backfilled filter_version for ${nullCount} positions (${updated} marked as v3)`);
+  }
+} catch(e) { console.error('[DB] filter_version backfill error:', e.message); }
+
 const CURRENT_FILTER_VERSION = 3; // v0=no filters, v1=early tuning, v2=slope2.0+dist3+entry0.65, v3=ema9+rsi14
 
 const insertPosition = db.prepare(`
