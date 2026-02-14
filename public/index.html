@@ -576,10 +576,11 @@
           return;
         }
 
-        posAllRows = rows;
-        const totalPages = Math.ceil(rows.length / POS_PER_PAGE);
+        // Sort oldest first so page 1 = oldest trades, last page = most recent
+        posAllRows = [...rows].sort((a, b) => a.id - b.id);
+        const totalPages = Math.ceil(posAllRows.length / POS_PER_PAGE);
         
-        // If on "latest" (-1) or page exceeds total, go to last page
+        // Default to last page (most recent trades)
         const activePage = (posCurrentPage === null || posCurrentPage >= totalPages) ? totalPages - 1 : posCurrentPage;
 
         const start = activePage * POS_PER_PAGE;
