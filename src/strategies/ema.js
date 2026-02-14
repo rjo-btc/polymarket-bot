@@ -11,6 +11,25 @@ function calcEMA(data, period) {
   return ema;
 }
 
+function calcRSI(closes, period) {
+  const rsi = new Array(closes.length).fill(50);
+  if (closes.length < period + 1) return rsi;
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d > 0) avgGain += d; else avgLoss += Math.abs(d);
+  }
+  avgGain /= period; avgLoss /= period;
+  rsi[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + (d > 0 ? d : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (d < 0 ? Math.abs(d) : 0)) / period;
+    rsi[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+  }
+  return rsi;
+}
+
 async function evaluate(market, btcPrice) {
   const secsToEnd = Math.floor((market.endMs - Date.now()) / 1000);
 
@@ -46,24 +65,31 @@ async function evaluate(market, btcPrice) {
 
   const closes = klines.map(k => k.close);
   const price = closes[closes.length - 1];
-  const ema20 = calcEMA(closes, 20);
-  const ema200 = calcEMA(closes, 200);
+  const fastPeriod = p.fast_period ?? 9;
+  const slowPeriod = p.slow_period ?? 200;
+  const emaFast = calcEMA(closes, fastPeriod);
+  const emaSlow = calcEMA(closes, slowPeriod);
+  const rsi = calcRSI(closes, 14);
 
-  const fast = ema20[ema20.length - 1];
-  const slow = ema200[ema200.length - 1];
-  const fastPrev = ema20[ema20.length - 2];
+  const fast = emaFast[emaFast.length - 1];
+  const slow = emaSlow[emaSlow.length - 1];
+  const fastPrev = emaFast[emaFast.length - 2];
   const slope = fast - fastPrev;
   const distBps = ((price - fast) / fast) * 10000;
   const emaDistBps = ((fast - slow) / slow) * 10000;
+  const currentRSI = rsi[rsi.length - 1];
 
-  const paStr = `PA[dist=${Math.abs(distBps).toFixed(1)} bps,slope=${slope.toFixed(4)},ema20=${fast.toFixed(2)},ema200=${slow.toFixed(2)}]`;
+  const paStr = `PA[dist=${Math.abs(distBps).toFixed(1)} bps,slope=${slope.toFixed(4)},ema${fastPeriod}=${fast.toFixed(2)},ema${slowPeriod}=${slow.toFixed(2)},rsi=${currentRSI.toFixed(1)}]`;
 
   _latestState = {
     ema_dist_bps: parseFloat(Math.abs(emaDistBps).toFixed(1)),
     slope: parseFloat(slope.toFixed(4)),
     slope_abs: parseFloat(Math.abs(slope).toFixed(4)),
-    ema20: parseFloat(fast.toFixed(2)),
-    ema200: parseFloat(slow.toFixed(2)),
+    fast_period: fastPeriod,
+    slow_period: slowPeriod,
+    ema_fast: parseFloat(fast.toFixed(2)),
+    ema_slow: parseFloat(slow.toFixed(2)),
+    rsi: parseFloat(currentRSI.toFixed(1)),
     min_dist_bps: p.min_ema_dist_bps ?? 5,
     min_slope: p.min_slope_abs ?? 2,
     long_min_dist: p.long_min_dist_bps ?? 8,
@@ -84,20 +110,24 @@ async function evaluate(market, btcPrice) {
   const SHORT_DEAD_SLOPE_LO = p.short_dead_slope_lo ?? 3;
   const SHORT_DEAD_SLOPE_HI = p.short_dead_slope_hi ?? 6;
 
-  // LONG: price > EMA20 > EMA200, strong signal required
+  // RSI confirmation thresholds
+  const RSI_LONG_MIN = p.rsi_long_min ?? 50;
+  const RSI_SHORT_MAX = p.rsi_short_max ?? 50;
+
+  // LONG: price > EMAfast > EMAslow, strong signal required + RSI confirmation
   if (price > fast && fast > slow && slope > 0) {
-    if (absEmaDistBps >= LONG_MIN_DIST && slopeAbs >= LONG_MIN_SLOPE) {
+    const reasons = [];
+    if (absEmaDistBps < LONG_MIN_DIST) reasons.push(`dist ${absEmaDistBps.toFixed(1)} < ${LONG_MIN_DIST} bps (long requires strong)`);
+    if (slopeAbs < LONG_MIN_SLOPE) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${LONG_MIN_SLOPE} (long requires strong)`);
+    if (currentRSI < RSI_LONG_MIN) reasons.push(`RSI ${currentRSI.toFixed(1)} < ${RSI_LONG_MIN} (no momentum confirmation)`);
+    if (reasons.length === 0) {
       return {
         ...base,
         action: 'ENTER',
         side: 'up',
-        reason: `LONG signal: price ${price.toFixed(2)} > EMA20 ${fast.toFixed(2)} > EMA200 ${slow.toFixed(2)}; ${paStr}`,
+        reason: `LONG signal: price ${price.toFixed(2)} > EMA${fastPeriod} ${fast.toFixed(2)} > EMA${slowPeriod} ${slow.toFixed(2)}; RSI ${currentRSI.toFixed(1)}; ${paStr}`,
       };
     }
-    // Log why filtered
-    const reasons = [];
-    if (absEmaDistBps < LONG_MIN_DIST) reasons.push(`dist ${absEmaDistBps.toFixed(1)} < ${LONG_MIN_DIST} bps (long requires strong)`);
-    if (slopeAbs < LONG_MIN_SLOPE) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${LONG_MIN_SLOPE} (long requires strong)`);
     return { ...base, action: 'SKIP', side: null, reason: `LONG aligned but filtered: ${reasons.join(', ')}; ${paStr}` };
   }
 
@@ -114,19 +144,19 @@ async function evaluate(market, btcPrice) {
       return { ...base, action: 'SKIP', side: null, reason: `SHORT mid-range trap filtered: ${reasons.join(', ')}; ${paStr}` };
     }
 
-    // Must still pass base filters
-    if (absEmaDistBps >= p.min_ema_dist_bps && slopeAbs >= p.min_slope_abs) {
+    // Must still pass base filters + RSI
+    const reasons = [];
+    if (absEmaDistBps < p.min_ema_dist_bps) reasons.push(`dist ${absEmaDistBps.toFixed(1)} < ${p.min_ema_dist_bps} bps`);
+    if (slopeAbs < p.min_slope_abs) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${p.min_slope_abs}`);
+    if (currentRSI > RSI_SHORT_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_SHORT_MAX} (no bearish confirmation)`);
+    if (reasons.length === 0) {
       return {
         ...base,
         action: 'ENTER',
         side: 'down',
-        reason: `SHORT signal: price ${price.toFixed(2)} < EMA20 ${fast.toFixed(2)} < EMA200 ${slow.toFixed(2)}; ${paStr}`,
+        reason: `SHORT signal: price ${price.toFixed(2)} < EMA${fastPeriod} ${fast.toFixed(2)} < EMA${slowPeriod} ${slow.toFixed(2)}; RSI ${currentRSI.toFixed(1)}; ${paStr}`,
       };
     }
-
-    const reasons = [];
-    if (absEmaDistBps < p.min_ema_dist_bps) reasons.push(`dist ${absEmaDistBps.toFixed(1)} < ${p.min_ema_dist_bps} bps`);
-    if (slopeAbs < p.min_slope_abs) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${p.min_slope_abs}`);
     return { ...base, action: 'SKIP', side: null, reason: `SHORT aligned but filtered: ${reasons.join(', ')}; ${paStr}` };
   }
 
@@ -153,19 +183,25 @@ async function computeState() {
     if (klines.length < 200) return _latestState;
     const closes = klines.map(k => k.close);
     const price = closes[closes.length - 1];
-    const ema20 = calcEMA(closes, 20);
-    const ema200 = calcEMA(closes, 200);
-    const fast = ema20[ema20.length - 1];
-    const slow = ema200[ema200.length - 1];
-    const fastPrev = ema20[ema20.length - 2];
+    const fastPeriod = p.fast_period ?? 9;
+    const slowPeriod = p.slow_period ?? 200;
+    const emaFast = calcEMA(closes, fastPeriod);
+    const emaSlow = calcEMA(closes, slowPeriod);
+    const rsi = calcRSI(closes, 14);
+    const fast = emaFast[emaFast.length - 1];
+    const slow = emaSlow[emaSlow.length - 1];
+    const fastPrev = emaFast[emaFast.length - 2];
     const slope = fast - fastPrev;
     const emaDistBps = ((fast - slow) / slow) * 10000;
     _latestState = {
       ema_dist_bps: parseFloat(Math.abs(emaDistBps).toFixed(1)),
       slope: parseFloat(slope.toFixed(4)),
       slope_abs: parseFloat(Math.abs(slope).toFixed(4)),
-      ema20: parseFloat(fast.toFixed(2)),
-      ema200: parseFloat(slow.toFixed(2)),
+      fast_period: fastPeriod,
+      slow_period: slowPeriod,
+      ema_fast: parseFloat(fast.toFixed(2)),
+      ema_slow: parseFloat(slow.toFixed(2)),
+      rsi: parseFloat(rsi[rsi.length - 1].toFixed(1)),
       min_dist_bps: p.min_ema_dist_bps ?? 5,
       min_slope: p.min_slope_abs ?? 2,
       long_min_dist: p.long_min_dist_bps ?? 8,

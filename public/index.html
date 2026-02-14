@@ -231,6 +231,11 @@
               <div class="muted tiny" id="emaSlopeMeta"></div>
             </div>
             <div class="stat">
+              <div class="label">RSI(14) <span id="rsiDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#666;margin-left:4px;vertical-align:middle;"></span></div>
+              <div class="value" id="rsiValue">-</div>
+              <div class="muted tiny" id="rsiMeta"></div>
+            </div>
+            <div class="stat">
               <div class="label">Total PnL</div>
               <div class="value" id="totalPnl">-</div>
             </div>
@@ -476,6 +481,22 @@
           else if (slope >= e.min_slope) { sDot.style.background = '#f5a623'; sDot.style.boxShadow = '0 0 6px rgba(245,166,35,.5)'; }
           else { sDot.style.background = '#e74c3c'; sDot.style.boxShadow = '0 0 6px rgba(231,76,60,.5)'; }
           $('emaSlopeMeta').textContent = `min ${e.min_slope} · long ${e.long_min_slope}`;
+
+          // RSI dot: green if confirming trend (>50 for up, <50 for down), yellow if neutral, red if against
+          if (e.rsi != null) {
+            $('rsiValue').textContent = e.rsi.toFixed(1);
+            const rDot = $('rsiDot');
+            if (e.rsi >= 60 || e.rsi <= 40) {
+              rDot.style.background = '#1dd49a'; rDot.style.boxShadow = '0 0 6px rgba(29,212,154,.5)';
+              $('rsiMeta').textContent = e.rsi >= 60 ? 'Bullish momentum' : 'Bearish momentum';
+            } else if (e.rsi >= 45 && e.rsi <= 55) {
+              rDot.style.background = '#e74c3c'; rDot.style.boxShadow = '0 0 6px rgba(231,76,60,.5)';
+              $('rsiMeta').textContent = 'Neutral — no confirmation';
+            } else {
+              rDot.style.background = '#f5a623'; rDot.style.boxShadow = '0 0 6px rgba(245,166,35,.5)';
+              $('rsiMeta').textContent = e.rsi > 50 ? 'Mild bullish' : 'Mild bearish';
+            }
+          }
         }
 
         updateLiveMarketClock();

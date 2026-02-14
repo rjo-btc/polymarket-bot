@@ -50,7 +50,7 @@ db.exec(`
 // Add filter_version column if missing (migration for existing DBs)
 try { db.exec(`ALTER TABLE positions ADD COLUMN filter_version INTEGER DEFAULT 0`); } catch(e) { /* already exists */ }
 
-const CURRENT_FILTER_VERSION = 2; // v0=no filters, v1=early tuning, v2=slope2.0+dist3+entry0.65
+const CURRENT_FILTER_VERSION = 3; // v0=no filters, v1=early tuning, v2=slope2.0+dist3+entry0.65, v3=ema9+rsi14
 
 const insertPosition = db.prepare(`
   INSERT INTO positions (market_slug, market_title, strategy, side, stake_usd, shares, entry_price,

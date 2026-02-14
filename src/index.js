@@ -228,7 +228,7 @@ app.get('/api/kelly', (req, res) => {
     const MIN_TRADES = 50;
     const MAX_RISK = 0.20;
 
-    const CURRENT_FILTER_VERSION = 2;
+    const CURRENT_FILTER_VERSION = 3;
 
     function calcKelly(trades) {
       const n = trades.length;
