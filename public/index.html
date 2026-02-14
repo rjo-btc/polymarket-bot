@@ -455,8 +455,6 @@
         $('downPrice').textContent = fmtProb(m.down_price);
         $('btcNow').textContent = fmtPrice(m.btc_price_now);
         $('btcStart').textContent = fmtPrice(m.btc_price_at_market_start);
-        $('source').textContent = m.resolution_source || '-';
-
         // EMA state bubbles
         const e = m.ema_state;
         if (e) {
