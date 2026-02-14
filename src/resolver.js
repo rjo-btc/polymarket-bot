@@ -1,8 +1,8 @@
-const { getOpenPositions, resolvePosition } = require('./db');
+const { getOpenPositions, resolvePosition, getAllPositions } = require('./db');
 const { getBtcPrice } = require('./btcPrice');
-const { autoTune } = require('./autotuner');
+const { autoTune, getParams } = require('./autotuner');
 const { notify } = require('./notify');
-const { onTradeResolved } = require('./phenomena');
+const { onTradeResolved, getState: getPhenomenaState } = require('./phenomena');
 
 async function resolveExpiredPositions() {
   const open = getOpenPositions.all();
@@ -70,7 +70,98 @@ async function resolveExpiredPositions() {
 
     // Run auto-tuner after every resolution
     try { autoTune(); } catch (e) { console.error('[Resolver] AutoTune error:', e.message); }
+
+    // Generate detailed loss explanation
+    if (!won) {
+      try {
+        const explanation = buildLossExplanation(pos, btcStart, btcEnd, btcWentUp, pnl);
+        notify(explanation);
+      } catch (e) { console.error('[Resolver] Loss explanation error:', e.message); }
+    }
   }
+}
+
+function buildLossExplanation(pos, btcStart, btcEnd, btcWentUp, pnl) {
+  const lines = [];
+  lines.push(`\n🔎 LOSS ANALYSIS — Trade #${pos.id}`);
+  lines.push(`━━━━━━━━━━━━━━━━━━━━━━`);
+
+  // What happened
+  const btcMoveBps = ((btcEnd - btcStart) / btcStart * 10000).toFixed(1);
+  const btcDir = btcWentUp ? '📈 UP' : '📉 DOWN';
+  lines.push(`Bet: ${pos.side.toUpperCase()} @ ${pos.entry_price.toFixed(3)} ($${pos.stake_usd.toFixed(2)})`);
+  lines.push(`BTC: $${btcStart.toFixed(0)} → $${btcEnd.toFixed(0)} (${btcDir}, ${btcMoveBps} bps)`);
+  lines.push(`Result: -$${Math.abs(pnl).toFixed(2)}`);
+  lines.push('');
+
+  // Parse entry reason for signal metrics
+  const paMatch = (pos.entry_reason || '').match(/PA\[([^\]]+)\]/);
+  const pa = {};
+  if (paMatch) {
+    paMatch[1].split(',').forEach(part => {
+      const [k, v] = part.split('=').map(s => s.trim());
+      if (k && v) pa[k] = isNaN(v) ? v : parseFloat(v);
+    });
+  }
+
+  // Signal quality assessment
+  lines.push('📊 Signal Quality:');
+  const params = getParams();
+  const tp = params.ema || {};
+  if (pa.dist !== undefined) {
+    const distOk = Math.abs(pa.dist) >= (tp.min_ema_dist_bps || 5);
+    lines.push(`  EMA dist: ${Math.abs(pa.dist).toFixed(1)} bps ${distOk ? '✅' : '⚠️ weak'} (min: ${tp.min_ema_dist_bps || 5})`);
+  }
+  if (pa.slope !== undefined) {
+    const slopeOk = Math.abs(pa.slope) >= (tp.min_slope_abs || 2);
+    lines.push(`  Slope: ${Math.abs(pa.slope).toFixed(2)} ${slopeOk ? '✅' : '⚠️ weak'} (min: ${tp.min_slope_abs || 2})`);
+  }
+  lines.push(`  Entry price: ${pos.entry_price.toFixed(3)} ${pos.entry_price <= 0.50 ? '✅ cheap' : pos.entry_price <= 0.65 ? '⚠️ mid' : '❌ expensive'}`);
+  lines.push(`  Timing: ${pos.seconds_to_end_at_entry}s before end`);
+  lines.push('');
+
+  // BTC move analysis
+  const absBps = Math.abs(parseFloat(btcMoveBps));
+  if (absBps < 5) {
+    lines.push('💤 BTC barely moved (<5 bps) — flat market chop');
+  } else if (absBps < 15) {
+    lines.push('↔️ Small BTC move — marginal signal');
+  } else {
+    lines.push('💥 Strong BTC move against us — signal was wrong');
+  }
+
+  // Check for phenomena
+  const phenState = getPhenomenaState();
+  const activePhenomena = [];
+  for (const [key, state] of Object.entries(phenState.state)) {
+    if (state.last_triggered && (Date.now() - state.last_triggered < 3600000)) {
+      const phenDef = { ema_lag_reversal: 'EMA Lag Reversal', side_streak_loss: 'Side Streak Loss', flat_market_chop: 'Flat Market Chop', expensive_entry_trap: 'Expensive Entry Trap' };
+      activePhenomena.push(phenDef[key] || key);
+    }
+  }
+  if (activePhenomena.length > 0) {
+    lines.push('');
+    lines.push(`⚡ Active phenomena: ${activePhenomena.join(', ')}`);
+  }
+
+  // Consecutive loss tracking
+  const allResolved = getAllPositions.all().filter(p => p.status === 'resolved').sort((a, b) => a.id - b.id);
+  let streak = 0;
+  for (let i = allResolved.length - 1; i >= 0; i--) {
+    if (allResolved[i].pnl < 0) streak++;
+    else break;
+  }
+  if (streak >= 2) {
+    lines.push(`🔥 Loss streak: ${streak} in a row`);
+  }
+
+  // Running P&L
+  const totalPnl = allResolved.reduce((s, p) => s + (p.pnl || 0), 0);
+  const capital = 1000 + totalPnl;
+  lines.push('');
+  lines.push(`💰 Capital: $${capital.toFixed(0)} (${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(0)} total)`);
+
+  return lines.join('\n');
 }
 
 module.exports = { resolveExpiredPositions };
