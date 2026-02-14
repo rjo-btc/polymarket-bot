@@ -172,9 +172,9 @@ function buildLossExplanation(pos, btcStart, btcEnd, btcWentUp, pnl) {
   }
 
   // Check for phenomena
-  const phenState = getPhenomenaState();
+  const phenState2 = getPhenomenaState();
   const activePhenomena = [];
-  for (const [key, state] of Object.entries(phenState.state)) {
+  for (const [key, state] of Object.entries(phenState2.state)) {
     if (state.last_triggered && (Date.now() - state.last_triggered < 3600000)) {
       const phenDef = { ema_lag_reversal: 'EMA Lag Reversal', side_streak_loss: 'Side Streak Loss', flat_market_chop: 'Flat Market Chop', expensive_entry_trap: 'Expensive Entry Trap' };
       activePhenomena.push(phenDef[key] || key);
