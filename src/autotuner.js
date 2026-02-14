@@ -20,6 +20,14 @@ const defaults = {
     side_bias: null,
     side_up_weight: 1.0,
     side_down_weight: 1.0,
+    // Direction-specific: longs need strong signals
+    long_min_dist_bps: 8,
+    long_min_slope: 6,
+    // Direction-specific: shorts skip the mid-range death zone
+    short_dead_zone_lo: 5,
+    short_dead_zone_hi: 8,
+    short_dead_slope_lo: 3,
+    short_dead_slope_hi: 6,
     enabled: true,
   },
   session: {
