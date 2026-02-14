@@ -11,7 +11,7 @@ const LOG_KEY = 'autotuner_log';
  */
 const defaults = {
   ema: {
-    min_ema_dist_bps: 3,
+    min_ema_dist_bps: 5,
     min_slope_abs: 2.0,
     max_entry_price: 0.65,
     min_entry_price: 0.0,
