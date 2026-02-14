@@ -190,16 +190,13 @@ app.get('/api/summary', (req, res) => {
       resolved_trades: resolved.length,
       winning_trades: wins.length,
       losing_trades: losses.length,
-      // Max drawdown: worst peak-to-trough in cumulative PnL
+      // Max drawdown: lowest point below starting capital
       max_drawdown_usd: (() => {
-        let peak = 0, maxDD = 0, cumPnl = 0;
-        // Sort by id ascending for chronological order
+        let cumPnl = 0, maxDD = 0;
         const sorted = [...resolved].sort((a, b) => a.id - b.id);
         for (const p of sorted) {
           cumPnl += (p.pnl || 0);
-          if (cumPnl > peak) peak = cumPnl;
-          const dd = peak - cumPnl;
-          if (dd > maxDD) maxDD = dd;
+          if (cumPnl < -maxDD) maxDD = -cumPnl;
         }
         return Math.round(maxDD * 100) / 100;
       })(),
