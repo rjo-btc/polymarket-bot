@@ -613,31 +613,16 @@
 
         // Render pager
         const pager = $('positionsPager');
-        if (totalPages <= 1) {
-          pager.innerHTML = `<span class="muted">Page 1 of 1</span>`;
-          return;
-        }
+        const rangeStart = start + 1;
+        const rangeEnd = Math.min(start + POS_PER_PAGE, rows.length);
+        const prevDisabled = activePage === 0;
+        const nextDisabled = activePage >= totalPages - 1;
 
-        const isLatest = posCurrentPage < 0 || activePage === totalPages - 1;
-        let pagerHtml = '';
-        
-        // First / Prev buttons
-        pagerHtml += `<button onclick="posGoPage(0)" style="padding:2px 6px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px" ${activePage === 0 ? 'disabled' : ''}>&#171; First</button>`;
-        pagerHtml += `<button onclick="posGoPage(${activePage - 1})" style="padding:2px 6px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px" ${activePage === 0 ? 'disabled' : ''}>&#8249; Prev</button>`;
-
-        // Page numbers (show max 5 around current)
-        const startPage = Math.max(0, activePage - 2);
-        const endPage = Math.min(totalPages - 1, activePage + 2);
-        for (let i = startPage; i <= endPage; i++) {
-          const active = i === activePage;
-          pagerHtml += `<button onclick="posGoPage(${i})" style="padding:2px 8px;font-size:11px;cursor:pointer;border:1px solid ${active ? 'var(--blue)' : 'var(--border)'};background:${active ? 'var(--blue)' : 'var(--card)'};color:${active ? '#fff' : 'var(--fg)'};border-radius:4px;font-weight:${active ? '700' : '400'}">${i + 1}</button>`;
-        }
-
-        // Next / Latest buttons  
-        pagerHtml += `<button onclick="posGoPage(${activePage + 1})" style="padding:2px 6px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px" ${isLatest ? 'disabled' : ''}>Next &#8250;</button>`;
-        pagerHtml += `<button onclick="posGoPage(-1)" style="padding:2px 6px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:${isLatest ? 'var(--blue)' : 'var(--card)'};color:${isLatest ? '#fff' : 'var(--fg)'};border-radius:4px;font-weight:${isLatest ? '700' : '400'}">Latest &#187;</button>`;
-
-        pager.innerHTML = pagerHtml;
+        pager.innerHTML = `
+          <span style="color:var(--muted);font-size:12px;border:1px solid var(--border);padding:3px 10px;border-radius:4px">${rangeStart} – ${rangeEnd} of ${rows.length}</span>
+          <button onclick="posGoPage(${activePage - 1})" style="padding:3px 8px;font-size:13px;cursor:${prevDisabled?'default':'pointer'};border:1px solid var(--border);background:var(--card);color:${prevDisabled?'var(--border)':'var(--fg)'};border-radius:4px;line-height:1" ${prevDisabled?'disabled':''}>&#8249;</button>
+          <button onclick="posGoPage(${activePage + 1})" style="padding:3px 8px;font-size:13px;cursor:${nextDisabled?'default':'pointer'};border:1px solid var(--border);background:var(--card);color:${nextDisabled?'var(--border)':'var(--fg)'};border-radius:4px;line-height:1" ${nextDisabled?'disabled':''}>&#8250;</button>
+        `;
       }
 
       function posGoPage(page) {
