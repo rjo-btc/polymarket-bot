@@ -1,6 +1,7 @@
 const { findCurrentMarket, fetchTokenPrices } = require('./market');
 const { getBtcPrice } = require('./btcPrice');
-const { insertPosition, insertDecision, pruneDecisions, getOpenPositions, getAllPositions } = require('./db');
+const { insertPosition, insertDecision, pruneDecisions, getOpenPositions, getAllPositions, insertExecution } = require('./db');
+const { getLatestState: getEmaState } = require('./strategies/ema');
 const emaStrategy = require('./strategies/ema');
 const sessionStrategy = require('./strategies/session');
 const { resolveExpiredPositions } = require('./resolver');
@@ -118,10 +119,26 @@ async function traderLoop() {
             const alreadyOpen = open.some(p => p.market_slug === market.market_slug && p.strategy === decision.strategy);
 
             if (!alreadyOpen) {
+              // Execution tracking: capture state at signal time
+              const signalAt = new Date().toISOString();
+              const signalBtcPrice = btc.price;
+              const signalSecsToEnd = Math.floor((market.endMs - Date.now()) / 1000);
+              const emaState = getEmaState();
+              
+              // Detect signal type from reason
+              let signalType = 'standard';
+              if (decision.reason && decision.reason.includes('MOMENTUM BURST')) signalType = 'momentum_burst';
+              else if (decision.reason && decision.reason.includes('SLOPE ACCEL')) signalType = 'slope_accel';
+
               const prices = await fetchTokenPrices();
+              const fillAt = Date.now();
+              const fillDelay = fillAt - new Date(signalAt).getTime();
               const entryPrice = decision.side === 'up'
                 ? (prices.up || 0.5)
                 : (prices.down || 0.5);
+              
+              // Compute spread from both sides
+              const spread = prices.up && prices.down ? Math.abs(1 - prices.up - prices.down) : null;
 
               // Apply entry price filter from auto-tuner
               const tp = tunerParams[decision.strategy] || {};
@@ -244,6 +261,41 @@ async function traderLoop() {
                 entry_reason: decision.reason,
                 market_end_at: market.market_end_at,
               });
+
+              // Record execution quality data
+              try {
+                const posId = getAllPositions.all()[0]?.id; // most recent position
+                const fillBtcPrice = btc.price;
+                const btcMoveBps = signalBtcPrice ? ((fillBtcPrice - signalBtcPrice) / signalBtcPrice) * 10000 : null;
+                const fillSecsToEnd = Math.floor((market.endMs - fillAt) / 1000);
+                
+                insertExecution.run({
+                  position_id: posId,
+                  market_slug: market.market_slug,
+                  side: decision.side,
+                  signal_type: signalType,
+                  signal_at: signalAt,
+                  signal_price: null, // would need orderbook snapshot for true signal price
+                  quoted_price: entryPrice,
+                  executed_price: entryPrice, // paper trading = no slippage (quoted = executed)
+                  slippage_cents: 0, // paper trading has 0 actual slippage
+                  seconds_to_end_at_signal: signalSecsToEnd,
+                  seconds_to_end_at_fill: fillSecsToEnd,
+                  fill_delay_ms: fillDelay,
+                  btc_price_at_signal: signalBtcPrice,
+                  btc_price_at_fill: fillBtcPrice,
+                  btc_move_bps: btcMoveBps ? parseFloat(btcMoveBps.toFixed(2)) : null,
+                  ema_dist_bps: emaState?.ema_dist_bps ?? null,
+                  slope_abs: emaState?.slope_abs ?? null,
+                  rsi: emaState?.rsi ?? null,
+                  book_up_price: prices.up,
+                  book_down_price: prices.down,
+                  spread_cents: spread ? parseFloat((spread * 100).toFixed(2)) : null,
+                });
+                console.log(`[Trader] Execution tracked: ${signalType} | spread ${spread ? (spread*100).toFixed(1) : '?'}¢ | delay ${fillDelay}ms`);
+              } catch (e) {
+                console.error('[Trader] Execution tracking error:', e.message);
+              }
 
               enteredMarkets.set(key, true);
               botStatus.state = 'trading';

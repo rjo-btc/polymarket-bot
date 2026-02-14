@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { getAllPositions, getOpenPositions, insertPosition, getRecentDecisions, updatePostMortem } = require('./db');
+const { getAllPositions, getOpenPositions, insertPosition, getRecentDecisions, updatePostMortem, getRecentExecutions, getAllExecutions } = require('./db');
 const { findCurrentMarket, fetchTokenPrices, getCachedMarket } = require('./market');
 const { getBtcPrice, getPrevBtcPrice, startPricePolling, fetchBtcPrice } = require('./btcPrice');
 const { startTrader, getBotStatus } = require('./trader');
@@ -441,6 +441,77 @@ app.get('/api/decisions', (req, res) => {
       side: d.side,
       reason: d.reason,
     })));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Execution quality / live market testing
+app.get('/api/executions', (req, res) => {
+  try {
+    const execs = getAllExecutions.all();
+    
+    // Compute aggregate stats
+    const resolved = execs.filter(e => e.outcome);
+    const wins = resolved.filter(e => e.outcome === 'win');
+    const losses = resolved.filter(e => e.outcome === 'loss');
+    
+    const byType = {};
+    for (const e of execs) {
+      const t = e.signal_type || 'unknown';
+      if (!byType[t]) byType[t] = { count: 0, wins: 0, totalSpread: 0, totalDelay: 0, totalSlippage: 0, entries: [] };
+      byType[t].count++;
+      if (e.outcome === 'win') byType[t].wins++;
+      if (e.spread_cents != null) byType[t].totalSpread += e.spread_cents;
+      if (e.fill_delay_ms != null) byType[t].totalDelay += e.fill_delay_ms;
+      if (e.slippage_cents != null) byType[t].totalSlippage += e.slippage_cents;
+      byType[t].entries.push(e.quoted_price);
+    }
+    
+    const typeStats = {};
+    for (const [type, data] of Object.entries(byType)) {
+      typeStats[type] = {
+        count: data.count,
+        win_rate: data.count > 0 ? ((data.wins / data.count) * 100).toFixed(1) + '%' : 'N/A',
+        avg_spread_cents: data.count > 0 ? (data.totalSpread / data.count).toFixed(2) : null,
+        avg_delay_ms: data.count > 0 ? Math.round(data.totalDelay / data.count) : null,
+        avg_slippage_cents: data.count > 0 ? (data.totalSlippage / data.count).toFixed(2) : null,
+        avg_entry_price: data.entries.length > 0 ? (data.entries.reduce((a,b) => a+b, 0) / data.entries.length).toFixed(4) : null,
+      };
+    }
+    
+    // By seconds_to_end buckets
+    const timeBuckets = { 'early_240_270': [], 'standard_150_240': [], 'late_sub_150': [] };
+    for (const e of execs) {
+      const s = e.seconds_to_end_at_signal;
+      if (s >= 240) timeBuckets.early_240_270.push(e);
+      else if (s >= 150) timeBuckets.standard_150_240.push(e);
+      else timeBuckets.late_sub_150.push(e);
+    }
+    
+    const timingStats = {};
+    for (const [bucket, arr] of Object.entries(timeBuckets)) {
+      const w = arr.filter(e => e.outcome === 'win').length;
+      const avgEntry = arr.length > 0 ? arr.reduce((s, e) => s + (e.quoted_price || 0), 0) / arr.length : 0;
+      const avgSpread = arr.length > 0 ? arr.reduce((s, e) => s + (e.spread_cents || 0), 0) / arr.length : 0;
+      timingStats[bucket] = {
+        count: arr.length,
+        win_rate: arr.length > 0 ? ((w / arr.length) * 100).toFixed(1) + '%' : 'N/A',
+        avg_entry: avgEntry.toFixed(4),
+        avg_spread_cents: avgSpread.toFixed(2),
+      };
+    }
+    
+    res.json({
+      total: execs.length,
+      resolved: resolved.length,
+      win_rate: resolved.length > 0 ? ((wins.length / resolved.length) * 100).toFixed(1) + '%' : 'N/A',
+      avg_spread_cents: execs.length > 0 ? (execs.reduce((s, e) => s + (e.spread_cents || 0), 0) / execs.length).toFixed(2) : null,
+      avg_fill_delay_ms: execs.length > 0 ? Math.round(execs.reduce((s, e) => s + (e.fill_delay_ms || 0), 0) / execs.length) : null,
+      by_signal_type: typeStats,
+      by_timing: timingStats,
+      recent: execs.slice(0, 20),
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

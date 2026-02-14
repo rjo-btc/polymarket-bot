@@ -1,4 +1,4 @@
-const { getOpenPositions, resolvePosition, getAllPositions } = require('./db');
+const { getOpenPositions, resolvePosition, getAllPositions, updateExecutionOutcome } = require('./db');
 const { getBtcPrice } = require('./btcPrice');
 const { autoTune, getParams } = require('./autotuner');
 const { notify } = require('./notify');
@@ -47,6 +47,18 @@ async function resolveExpiredPositions() {
     });
 
     console.log(`[Resolver] Position #${pos.id} ${won ? 'WON' : 'LOST'}: PnL $${pnl.toFixed(2)}`);
+
+    // Update execution outcome
+    try {
+      // Ideal PnL = what we'd get with no slippage (same entry in paper trading)
+      updateExecutionOutcome.run({
+        position_id: pos.id,
+        outcome: won ? 'win' : 'loss',
+        pnl: Math.round(pnl * 100) / 100,
+        ideal_pnl: Math.round(pnl * 100) / 100, // same in paper trading
+        slippage_cost: 0, // paper trading
+      });
+    } catch (e) { console.error('[Resolver] Execution outcome update error:', e.message); }
 
     // Get updated capital for notification
     const allPos = getOpenPositions.all ? null : null; // just use inline calc

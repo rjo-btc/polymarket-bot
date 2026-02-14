@@ -358,6 +358,14 @@
         </div>
       </section>
 
+      <section class="card" style="margin-top: 14px" id="executionCard">
+        <div style="font-weight: 700; margin-bottom: 6px">📡 Live Execution Quality</div>
+        <div class="muted tiny">Tracking real market conditions: spreads, timing, signal performance</div>
+        <div id="executionContent" style="margin-top: 10px">
+          <div class="muted">Loading...</div>
+        </div>
+      </section>
+
       <section class="card" style="margin-top: 14px">
         <div style="font-weight: 700; margin-bottom: 6px">Strategy comparison (paper)</div>
         <div class="muted tiny">EMA vs session/time strategy performance</div>
@@ -1113,8 +1121,82 @@
         }
       }
 
+      async function refreshExecutions() {
+        try {
+          const data = await fetchJSON('/api/executions');
+          const el = $('executionContent');
+          if (!data || data.total === 0) {
+            el.innerHTML = '<div class="muted">No executions tracked yet. Waiting for first trade under v3.1...</div>';
+            return;
+          }
+
+          let html = '';
+
+          // Summary stats
+          html += `<div class="stats" style="margin-bottom:12px">
+            <div class="stat"><div class="label">Tracked</div><div class="value">${data.total}</div></div>
+            <div class="stat"><div class="label">Win Rate</div><div class="value">${data.win_rate}</div></div>
+            <div class="stat"><div class="label">Avg Spread</div><div class="value">${data.avg_spread_cents ?? '—'}¢</div></div>
+            <div class="stat"><div class="label">Avg Fill Delay</div><div class="value">${data.avg_fill_delay_ms ?? '—'}ms</div></div>
+          </div>`;
+
+          // By signal type
+          html += '<div style="font-weight:600;font-size:13px;margin-bottom:6px">By Signal Type</div>';
+          for (const [type, stats] of Object.entries(data.by_signal_type || {})) {
+            const label = type === 'momentum_burst' ? '⚡ Momentum Burst' : 
+                          type === 'slope_accel' ? '📈 Slope Acceleration' : 
+                          type === 'standard' ? '📊 Standard' : type;
+            const wrNum = parseFloat(stats.win_rate);
+            const wrColor = wrNum >= 55 ? 'var(--green,#1dd49a)' : wrNum >= 45 ? 'var(--blue,#59a2ff)' : 'var(--red,#e74c3c)';
+            html += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;padding:4px 8px;background:var(--card);border-radius:6px;border:1px solid var(--border)">
+              <span style="flex:1;font-size:13px">${label}</span>
+              <span class="tiny">${stats.count} trades</span>
+              <span class="tiny" style="color:${wrColor}">${stats.win_rate} WR</span>
+              <span class="tiny">${stats.avg_entry_price ?? '—'} avg entry</span>
+              <span class="tiny">${stats.avg_spread_cents ?? '—'}¢ spread</span>
+              <span class="tiny">${stats.avg_delay_ms ?? '—'}ms delay</span>
+            </div>`;
+          }
+
+          // By timing
+          html += '<div style="font-weight:600;font-size:13px;margin:10px 0 6px">By Entry Timing</div>';
+          const timingLabels = { early_240_270: '⏰ Early (240-270s)', standard_150_240: '📍 Standard (150-240s)', late_sub_150: '🔻 Late (<150s)' };
+          for (const [bucket, stats] of Object.entries(data.by_timing || {})) {
+            if (stats.count === 0) continue;
+            html += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;padding:4px 8px;background:var(--card);border-radius:6px;border:1px solid var(--border)">
+              <span style="flex:1;font-size:13px">${timingLabels[bucket] || bucket}</span>
+              <span class="tiny">${stats.count} trades</span>
+              <span class="tiny">${stats.win_rate} WR</span>
+              <span class="tiny">${stats.avg_entry} avg entry</span>
+              <span class="tiny">${stats.avg_spread_cents}¢ spread</span>
+            </div>`;
+          }
+
+          // Recent executions
+          if (data.recent && data.recent.length > 0) {
+            html += '<div style="font-weight:600;font-size:13px;margin:10px 0 6px">Recent Executions</div>';
+            for (const e of data.recent.slice(0, 8)) {
+              const ago = Math.round((Date.now() - new Date(e.signal_at).getTime()) / 60000);
+              const typeIcon = e.signal_type === 'momentum_burst' ? '⚡' : e.signal_type === 'slope_accel' ? '📈' : '📊';
+              const outcomeIcon = e.outcome === 'win' ? '✅' : e.outcome === 'loss' ? '❌' : '⏳';
+              html += `<div class="tiny muted" style="margin-bottom:2px">
+                ${outcomeIcon} ${typeIcon} ${e.side.toUpperCase()} @ ${e.quoted_price?.toFixed(3) ?? '?'} | 
+                spread ${e.spread_cents?.toFixed(1) ?? '?'}¢ | 
+                ${e.seconds_to_end_at_signal?.toFixed(0) ?? '?'}s to end | 
+                delay ${e.fill_delay_ms ?? '?'}ms | 
+                ${ago}m ago${e.pnl != null ? ` | $${e.pnl.toFixed(2)}` : ''}
+              </div>`;
+            }
+          }
+
+          el.innerHTML = html;
+        } catch (e) {
+          console.error('Executions fetch error:', e);
+        }
+      }
+
       async function refreshAll() {
-        await Promise.all([refreshMarket(), refreshPanels(), refreshKelly(), refreshAnalysis(), refreshPhenomena()]);
+        await Promise.all([refreshMarket(), refreshPanels(), refreshKelly(), refreshAnalysis(), refreshPhenomena(), refreshExecutions()]);
       }
 
       $('tradeForm').addEventListener('submit', async (ev) => {
@@ -1190,6 +1272,7 @@
       setInterval(refreshKelly, 15000);
       setInterval(refreshAnalysis, 30000);
       setInterval(refreshPhenomena, 15000);
+      setInterval(refreshExecutions, 15000);
     </script>
   </body>
 </html>

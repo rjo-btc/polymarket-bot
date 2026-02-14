@@ -80,6 +80,58 @@ const pruneDecisions = db.prepare(`DELETE FROM decisions WHERE id NOT IN (SELECT
 
 const updatePostMortem = db.prepare(`UPDATE positions SET post_mortem = @post_mortem WHERE id = @id`);
 
+// Execution quality tracking — live market testing
+db.exec(`
+  CREATE TABLE IF NOT EXISTS executions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id INTEGER,
+    market_slug TEXT NOT NULL,
+    side TEXT NOT NULL,
+    signal_type TEXT,
+    signal_at TEXT NOT NULL,
+    signal_price REAL,
+    quoted_price REAL,
+    executed_price REAL,
+    slippage_cents REAL,
+    seconds_to_end_at_signal REAL,
+    seconds_to_end_at_fill REAL,
+    fill_delay_ms REAL,
+    btc_price_at_signal REAL,
+    btc_price_at_fill REAL,
+    btc_move_bps REAL,
+    ema_dist_bps REAL,
+    slope_abs REAL,
+    rsi REAL,
+    book_up_price REAL,
+    book_down_price REAL,
+    spread_cents REAL,
+    outcome TEXT,
+    pnl REAL,
+    ideal_pnl REAL,
+    slippage_cost REAL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+const insertExecution = db.prepare(`
+  INSERT INTO executions (position_id, market_slug, side, signal_type, signal_at, signal_price,
+    quoted_price, executed_price, slippage_cents, seconds_to_end_at_signal, seconds_to_end_at_fill,
+    fill_delay_ms, btc_price_at_signal, btc_price_at_fill, btc_move_bps, ema_dist_bps, slope_abs,
+    rsi, book_up_price, book_down_price, spread_cents)
+  VALUES (@position_id, @market_slug, @side, @signal_type, @signal_at, @signal_price,
+    @quoted_price, @executed_price, @slippage_cents, @seconds_to_end_at_signal, @seconds_to_end_at_fill,
+    @fill_delay_ms, @btc_price_at_signal, @btc_price_at_fill, @btc_move_bps, @ema_dist_bps, @slope_abs,
+    @rsi, @book_up_price, @book_down_price, @spread_cents)
+`);
+
+const updateExecutionOutcome = db.prepare(`
+  UPDATE executions SET outcome = @outcome, pnl = @pnl, ideal_pnl = @ideal_pnl, slippage_cost = @slippage_cost
+  WHERE position_id = @position_id
+`);
+
+const getAllExecutions = db.prepare(`SELECT * FROM executions ORDER BY id DESC`);
+const getRecentExecutions = db.prepare(`SELECT * FROM executions ORDER BY id DESC LIMIT 50`);
+
 // Key-value store for persisting autotuner params
 db.exec(`
   CREATE TABLE IF NOT EXISTS kv (
@@ -101,6 +153,10 @@ module.exports = {
   insertDecision,
   getRecentDecisions,
   pruneDecisions,
+  insertExecution,
+  updateExecutionOutcome,
+  getAllExecutions,
+  getRecentExecutions,
   kvGet,
   kvSet,
 };
