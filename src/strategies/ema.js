@@ -87,6 +87,7 @@ async function evaluate(market, btcPrice) {
   const paStr = `PA[dist=${Math.abs(distBps).toFixed(1)} bps,edist=${Math.abs(emaDistBps).toFixed(1)} bps,slope=${slope.toFixed(4)},ema${fastPeriod}=${fast.toFixed(2)},ema${slowPeriod}=${slow.toFixed(2)},rsi=${currentRSI.toFixed(1)}]`;
 
   _latestState = {
+    price_dist_bps: parseFloat(Math.abs(distBps).toFixed(1)),
     ema_dist_bps: parseFloat(Math.abs(emaDistBps).toFixed(1)),
     slope: parseFloat(slope.toFixed(4)),
     slope_abs: parseFloat(Math.abs(slope).toFixed(4)),
@@ -258,8 +259,10 @@ async function computeState() {
     const slow = emaSlow[emaSlow.length - 1];
     const fastPrev = emaFast[emaFast.length - 2];
     const slope = fast - fastPrev;
+    const distBps = ((price - fast) / fast) * 10000;
     const emaDistBps = ((fast - slow) / slow) * 10000;
     _latestState = {
+      price_dist_bps: parseFloat(Math.abs(distBps).toFixed(1)),
       ema_dist_bps: parseFloat(Math.abs(emaDistBps).toFixed(1)),
       slope: parseFloat(slope.toFixed(4)),
       slope_abs: parseFloat(Math.abs(slope).toFixed(4)),

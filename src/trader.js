@@ -213,31 +213,59 @@ async function traderLoop() {
                 continue;
               }
 
-              // Apply phenomena tightening if any
+              // Apply trend guardrail tightening if any
+              // Uses live EMA state directly (not regex parsing) for reliable enforcement
               if (guardResult.tighten) {
                 const tp2 = tunerParams[decision.strategy] || {};
+                const priceDist = emaState?.price_dist_bps ?? 0;  // price vs EMA9
+                const emaDist = emaState?.ema_dist_bps ?? 0;      // EMA9 vs EMA200
+                const slopeAbs = emaState?.slope_abs ?? 0;
+                
+                let blocked = false;
+                let blockReasons = [];
+
                 if (guardResult.tighten.min_slope_multiplier) {
                   const requiredSlope = (tp2.min_slope_abs || 2) * guardResult.tighten.min_slope_multiplier;
-                  const paMatch2 = (decision.reason || '').match(/slope=([-.0-9]+)/);
-                  const actualSlope = paMatch2 ? Math.abs(parseFloat(paMatch2[1])) : 0;
-                  if (actualSlope < requiredSlope) {
-                    console.log(`[Trader] TREND GUARDRAIL TIGHTEN: slope ${actualSlope.toFixed(2)} < required ${requiredSlope.toFixed(2)} — ${guardResult.reasons.join('; ')}`);
-                    continue;
+                  if (slopeAbs < requiredSlope) {
+                    blocked = true;
+                    blockReasons.push(`slope ${slopeAbs.toFixed(2)} < ${requiredSlope.toFixed(2)} (${guardResult.tighten.min_slope_multiplier}x)`);
                   }
                 }
                 if (guardResult.tighten.min_dist_multiplier) {
-                  const requiredDist = (tp2.min_ema_dist_bps || 5) * guardResult.tighten.min_dist_multiplier;
-                  // Use edist (EMA-to-EMA dist) if available, fall back to dist (price-to-EMA)
-                  const edistMatch = (decision.reason || '').match(/edist=([.0-9]+)/);
-                  const distMatch = (decision.reason || '').match(/(?<![e])dist=([.0-9]+)/);
-                  const actualDist = edistMatch ? parseFloat(edistMatch[1]) : (distMatch ? parseFloat(distMatch[1]) : 0);
-                  if (actualDist < requiredDist) {
-                    console.log(`[Trader] TREND GUARDRAIL TIGHTEN: edist ${actualDist.toFixed(1)} < required ${requiredDist.toFixed(1)} — ${guardResult.reasons.join('; ')}`);
-                    continue;
+                  const mult = guardResult.tighten.min_dist_multiplier;
+                  // Check BOTH distances — price-to-EMA9 AND EMA9-to-EMA200
+                  // Price-to-EMA9 (signal quality): base threshold 3 bps
+                  const priceDistRequired = 3 * mult;
+                  // EMA9-to-EMA200 (trend strength): base threshold from params
+                  const emaDistRequired = (tp2.min_ema_dist_bps || 5) * mult;
+                  
+                  if (priceDist < priceDistRequired) {
+                    blocked = true;
+                    blockReasons.push(`price-to-EMA dist ${priceDist.toFixed(1)} < ${priceDistRequired.toFixed(1)} bps (${mult}x)`);
+                  }
+                  if (emaDist < emaDistRequired) {
+                    blocked = true;
+                    blockReasons.push(`EMA-to-EMA dist ${emaDist.toFixed(1)} < ${emaDistRequired.toFixed(1)} bps (${mult}x)`);
                   }
                 }
                 if (guardResult.tighten.max_entry_override && entryPrice > guardResult.tighten.max_entry_override) {
-                  console.log(`[Trader] TREND GUARDRAIL TIGHTEN: entry ${entryPrice.toFixed(3)} > temp cap ${guardResult.tighten.max_entry_override} — ${guardResult.reasons.join('; ')}`);
+                  blocked = true;
+                  blockReasons.push(`entry ${entryPrice.toFixed(3)} > temp cap ${guardResult.tighten.max_entry_override}`);
+                }
+
+                if (blocked) {
+                  const fullReason = `TREND GUARDRAIL BLOCKED: ${blockReasons.join('; ')} — ${guardResult.reasons.join('; ')}`;
+                  console.log(`[Trader] ${fullReason}`);
+                  insertDecision.run({
+                    strategy: decision.strategy,
+                    market_slug: market.market_slug,
+                    market_end_at: market.market_end_at,
+                    last_checked_at: new Date().toISOString(),
+                    seconds_to_end: Math.floor((market.endMs - Date.now()) / 1000),
+                    action: 'SKIP',
+                    side: decision.side,
+                    reason: fullReason,
+                  });
                   continue;
                 }
                 if (guardResult.reasons.length > 0) {
@@ -251,7 +279,10 @@ async function traderLoop() {
               if (paMatch) {
                 paMatch[1].split(',').forEach(part => {
                   const [k, v] = part.split('=').map(s => s.trim());
-                  if (k && v) pa[k] = isNaN(v) ? v : parseFloat(v);
+                  if (k && v) {
+                    const cleaned = v.replace(/\s*bps\s*$/i, '').trim();
+                    pa[k] = isNaN(cleaned) ? v : parseFloat(cleaned);
+                  }
                 });
               }
 

@@ -126,7 +126,11 @@ function buildLossExplanation(pos, btcStart, btcEnd, btcWentUp, pnl) {
   if (paMatch) {
     paMatch[1].split(',').forEach(part => {
       const [k, v] = part.split('=').map(s => s.trim());
-      if (k && v) pa[k] = isNaN(v) ? v : parseFloat(v);
+      if (k && v) {
+        // Strip units like "bps" before parsing
+        const cleaned = v.replace(/\s*bps\s*$/i, '').trim();
+        pa[k] = isNaN(cleaned) ? v : parseFloat(cleaned);
+      }
     });
   }
 
