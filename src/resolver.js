@@ -75,7 +75,7 @@ async function resolveExpiredPositions() {
     if (!won) {
       try {
         const explanation = buildLossExplanation(pos, btcStart, btcEnd, btcWentUp, pnl);
-        notify(explanation);
+        notify(explanation, 'loss_analysis');
       } catch (e) { console.error('[Resolver] Loss explanation error:', e.message); }
     }
   }

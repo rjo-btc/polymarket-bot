@@ -3,8 +3,8 @@ const path = require('path');
 
 const NOTIFY_FILE = path.join(__dirname, '..', 'data', 'notifications.jsonl');
 
-function notify(message) {
-  const line = JSON.stringify({ ts: Date.now(), message }) + '\n';
+function notify(message, type = 'info') {
+  const line = JSON.stringify({ ts: Date.now(), message, type }) + '\n';
   try {
     fs.mkdirSync(path.dirname(NOTIFY_FILE), { recursive: true });
     fs.appendFileSync(NOTIFY_FILE, line);
@@ -19,7 +19,7 @@ function drainNotifications() {
     const raw = fs.readFileSync(NOTIFY_FILE, 'utf8').trim();
     if (!raw) return [];
     fs.writeFileSync(NOTIFY_FILE, '');
-    return raw.split('\n').map(l => JSON.parse(l));
+    return raw.split('\n').map(l => JSON.parse(l)).filter(n => n.type === 'loss_analysis');
   } catch (e) {
     return [];
   }
