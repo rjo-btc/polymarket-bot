@@ -354,12 +354,13 @@
           <div class="muted">Waiting for trades...</div>
         </div>
 
-        <div style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px">
-          <div style="font-weight: 700; margin-bottom: 6px">🛡️ Trend Guardrails</div>
-          <div class="muted tiny">Learns from failure patterns and applies real-time guards</div>
-          <div id="phenomenaContent" style="margin-top: 10px">
-            <div class="muted">Loading...</div>
-          </div>
+      </section>
+
+      <section class="card" style="margin-top: 14px" id="guardrailsCard">
+        <div style="font-weight: 700; margin-bottom: 6px">🛡️ Trend Guardrails</div>
+        <div class="muted tiny">All active restrictions limiting the bot — pattern guards, circuit breaker, liquidity caps</div>
+        <div id="guardrailsContent" style="margin-top: 10px">
+          <div class="muted">Loading...</div>
         </div>
       </section>
 
@@ -1045,101 +1046,191 @@
         }
       }
 
-      async function refreshPhenomena() {
+      async function refreshGuardrails() {
         try {
-          const data = await fetchJSON('/api/phenomena');
-          const el = $('phenomenaContent');
-          if (!data.phenomena || data.phenomena.length === 0) {
-            el.innerHTML = '<div class="muted">No guardrails registered</div>';
-            return;
+          const [phenData, breakerData] = await Promise.all([
+            fetchJSON('/api/phenomena'),
+            fetchJSON('/api/breaker'),
+          ]);
+          const el = $('guardrailsContent');
+          let html = '';
+          let activeCount = 0;
+          let totalRestrictions = 0;
+
+          // === CIRCUIT BREAKER ===
+          if (breakerData.active_breaches > 0) {
+            for (const b of breakerData.breaches) {
+              activeCount++;
+              totalRestrictions++;
+              const expiresMin = b.expires_in_min || 0;
+              const expiresStr = expiresMin > 60 ? `${Math.floor(expiresMin/60)}h ${expiresMin%60}m` : `${expiresMin}m`;
+              html += `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;padding:8px 10px;background:var(--card);border-radius:6px;border:1px solid var(--red)">
+                <span>🔧</span>
+                <div style="flex:1">
+                  <div style="font-weight:600;font-size:13px">Circuit Breaker <span class="muted tiny">· from trade #${b.trade_id}</span></div>
+                  <div style="margin-top:3px;font-size:12px;color:var(--red)">
+                    ${b.side.toUpperCase()} blocked · Rules: ${b.rules.join(', ')}
+                  </div>
+                  <div style="margin-top:2px;font-size:11px;color:var(--muted)">
+                    ${b.violations.map(v => '• ' + v).join('<br>')}
+                  </div>
+                  <div style="margin-top:4px;font-size:11px">
+                    ⏳ Expires in <strong>${expiresStr}</strong> · or on ${b.side.toUpperCase()} win
+                  </div>
+                </div>
+              </div>`;
+            }
           }
 
-          let html = '';
-          for (const p of data.phenomena) {
-            const state = data.state[p.key] || {};
-            const hits = state.total_hits || 0;
-            const minSince = state.last_triggered ? Math.floor((Date.now() - state.last_triggered) / 60000) : null;
-            const decaySteps = minSince != null ? Math.floor(minSince / 5) : 0;
-            const timeStr = minSince != null ? (minSince < 60 ? `${minSince}m ago` : `${Math.floor(minSince/60)}h ${minSince%60}m ago`) : '';
+          // === PATTERN GUARDS (phenomena) ===
+          if (phenData.phenomena) {
+            for (const p of phenData.phenomena) {
+              const state = phenData.state[p.key] || {};
+              const hits = state.total_hits || 0;
+              if (hits === 0) continue; // skip never-triggered guards
+              
+              const minSince = state.last_triggered ? Math.floor((Date.now() - state.last_triggered) / 60000) : null;
+              const decaySteps = minSince != null ? Math.floor(minSince / 5) : 0;
+              const timeStr = minSince != null ? (minSince < 60 ? `${minSince}m ago` : `${Math.floor(minSince/60)}h ${minSince%60}m ago`) : '';
 
-            let raw = 0, effective = 0, threshold = 0, multiplier = null, detail = '', side = '';
+              let raw = 0, effective = 0, threshold = 0, multiplier = null, detail = '', side = '', effect = '';
 
-            if (p.key === 'ema_lag_reversal') {
-              raw = state.consecutive_losses || 0;
-              effective = Math.max(0, raw - decaySteps);
-              threshold = 2;
-              side = state.active_side || '';
-              if (effective >= threshold) multiplier = Math.min(2.0, 1 + effective * 0.25);
-              detail = side ? `${side.toUpperCase()} · ${raw} losses → eff. ${effective}` : '';
-              if (multiplier) detail += ` → ${multiplier.toFixed(2)}x signals`;
-              else if (raw > 0) detail += ' → decayed, clear';
-            } else if (p.key === 'side_streak_loss') {
-              raw = state.streak || 0;
-              effective = Math.max(0, raw - decaySteps);
-              threshold = 3;
-              side = state.losing_side || '';
-              if (effective >= threshold) multiplier = Math.min(2.0, 1 + (effective - 2) * 0.25);
-              detail = side ? `${side.toUpperCase()} · ${raw} streak → eff. ${effective}` : '';
-              if (multiplier) detail += ` → ${multiplier.toFixed(2)}x signals`;
-              else if (raw > 0) detail += ' → decayed, clear';
-            } else if (p.key === 'flat_market_chop') {
-              raw = state.recent_chop_losses || 0;
-              effective = Math.max(0, raw - decaySteps);
-              threshold = 2;
-              detail = `${raw} chop losses → eff. ${effective}`;
-              if (effective >= threshold) { multiplier = 2.0; detail += ' → 2x EMA dist'; }
-              else if (raw > 0) detail += ' → decayed, clear';
-            } else if (p.key === 'expensive_entry_trap') {
-              raw = state.recent_expensive_losses || 0;
-              effective = Math.max(0, raw - decaySteps);
-              threshold = 2;
-              detail = `${raw} expensive losses → eff. ${effective}`;
-              if (effective >= threshold) { detail += ' → cap 0.50'; multiplier = 1; }
-              else if (raw > 0) detail += ' → decayed, clear';
-            } else if (p.key === 'directional_spam') {
-              const winStreak = state.win_streak || 0;
-              raw = state.loss_streak || 0;
-              const spamMin = state.last_trade_at ? Math.floor((Date.now() - state.last_trade_at) / 60000) : 0;
-              const spamDecay = Math.floor(spamMin / 5);
-              effective = Math.max(0, raw - spamDecay);
-              threshold = 2;
-              side = state.streak_side || '';
-              if (winStreak >= 2) {
-                detail = side ? `${side.toUpperCase()} · ${winStreak} WIN streak 🔥 — trend confirmed, no penalty` : '';
-              } else if (effective >= threshold) {
-                multiplier = Math.min(2.0, 1 + (effective - 1) * 0.25);
-                detail = side ? `${side.toUpperCase()} · ${raw} LOSS streak → eff. ${effective} → ${multiplier.toFixed(2)}x signals` : '';
-              } else {
-                detail = side ? `${side.toUpperCase()} · W${winStreak}/L${raw}` : '';
-                if (raw > 0) detail += ' → decayed, clear';
+              if (p.key === 'ema_lag_reversal') {
+                raw = state.consecutive_losses || 0;
+                effective = Math.max(0, raw - decaySteps);
+                threshold = 2;
+                side = state.active_side || '';
+                if (effective >= threshold) {
+                  multiplier = Math.min(2.0, 1 + effective * 0.25);
+                  effect = `${multiplier.toFixed(2)}x signal strength required for ${(side||'?').toUpperCase()}`;
+                  detail = `${raw} consecutive ${(side||'?').toUpperCase()} losses (effective: ${effective} after decay)`;
+                } else if (raw > 0) {
+                  detail = `${raw} losses → decayed to ${effective}, below threshold (${threshold})`;
+                }
+              } else if (p.key === 'side_streak_loss') {
+                raw = state.streak || 0;
+                effective = Math.max(0, raw - decaySteps);
+                threshold = 3;
+                side = state.losing_side || '';
+                if (effective >= threshold) {
+                  multiplier = Math.min(2.0, 1 + (effective - 2) * 0.25);
+                  effect = `${multiplier.toFixed(2)}x signal strength required for ${(side||'?').toUpperCase()}`;
+                  detail = `${raw} ${(side||'?').toUpperCase()} losses in last 8 (effective: ${effective})`;
+                } else if (raw > 0) {
+                  detail = `${raw} streak → decayed to ${effective}`;
+                }
+              } else if (p.key === 'flat_market_chop') {
+                raw = state.recent_chop_losses || 0;
+                effective = Math.max(0, raw - decaySteps);
+                threshold = 2;
+                if (effective >= threshold) {
+                  effect = '2x EMA distance required (all sides)';
+                  detail = `${raw} losses in flat markets (effective: ${effective})`;
+                } else if (raw > 0) {
+                  detail = `${raw} chop losses → decayed to ${effective}`;
+                }
+              } else if (p.key === 'expensive_entry_trap') {
+                raw = state.recent_expensive_losses || 0;
+                effective = Math.max(0, raw - decaySteps);
+                threshold = 2;
+                if (effective >= threshold) {
+                  effect = 'Max entry capped at 0.50';
+                  detail = `${raw} expensive entry losses (effective: ${effective})`;
+                } else if (raw > 0) {
+                  detail = `${raw} expensive losses → decayed to ${effective}`;
+                }
+              } else if (p.key === 'directional_spam') {
+                const winStreak = state.win_streak || 0;
+                raw = state.loss_streak || 0;
+                const spamMin = state.last_trade_at ? Math.floor((Date.now() - state.last_trade_at) / 60000) : 0;
+                const spamDecay = Math.floor(spamMin / 5);
+                effective = Math.max(0, raw - spamDecay);
+                threshold = 2;
+                side = state.streak_side || '';
+                if (winStreak >= 2) {
+                  detail = `${(side||'?').toUpperCase()} · ${winStreak} WIN streak — trend confirmed`;
+                  effect = '✅ No restrictions (trend validated)';
+                } else if (effective >= threshold) {
+                  multiplier = Math.min(2.0, 1 + (effective - 1) * 0.25);
+                  effect = `${multiplier.toFixed(2)}x signal strength required for ${(side||'?').toUpperCase()}`;
+                  detail = `${raw} consecutive ${(side||'?').toUpperCase()} losses (effective: ${effective}, decays every 5m)`;
+                } else {
+                  detail = side ? `${(side||'?').toUpperCase()} · W${winStreak}/L${raw}` : '';
+                  if (raw > 0) detail += ' → decayed, clear';
+                }
+              }
+
+              const isActive = (effective >= threshold && raw > 0) || (p.key === 'directional_spam' && (state.win_streak || 0) >= 2);
+              if (isActive && multiplier) totalRestrictions++;
+              const isBlocking = isActive && multiplier && multiplier > 1;
+              const dot = isBlocking ? '🔴' : isActive ? '🟡' : '⚪';
+              const borderColor = isBlocking ? 'rgba(255,107,107,0.3)' : 'var(--border)';
+
+              html += `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;padding:6px 10px;background:var(--card);border-radius:6px;border:1px solid ${borderColor}">
+                <span>${dot}</span>
+                <div style="flex:1">
+                  <div style="font-weight:600;font-size:13px">${p.name} <span class="muted tiny">(${hits} total)${timeStr ? ' · last ' + timeStr : ''}</span></div>
+                  ${detail ? `<div style="margin-top:2px;font-size:12px;color:var(--muted)">${detail}</div>` : ''}
+                  ${effect ? `<div style="margin-top:2px;font-size:12px;font-weight:600;color:${isBlocking ? 'var(--red)' : effect.startsWith('✅') ? 'var(--green)' : 'var(--muted)'}">${effect}</div>` : ''}
+                </div>
+              </div>`;
+            }
+          }
+
+          // === LIQUIDITY CAP STATUS ===
+          try {
+            const market = await fetchJSON('/api/market');
+            if (market.ema_state) {
+              const prices = { up: market.prices?.up, down: market.prices?.down };
+              const secsLeft = market.seconds_left || 180;
+              for (const side of ['up', 'down']) {
+                const price = prices[side];
+                if (!price || price <= 0) continue;
+                const liq = await fetchJSON(`/api/liquidity?price=${price}&secs=${secsLeft}`);
+                if (liq.result) {
+                  const r = liq.result;
+                  totalRestrictions++;
+                  html += `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;padding:6px 10px;background:var(--card);border-radius:6px;border:1px solid var(--border)">
+                    <span>📊</span>
+                    <div style="flex:1">
+                      <div style="font-weight:600;font-size:13px">Liquidity Cap — ${side.toUpperCase()} @ ${price.toFixed(3)}</div>
+                      <div style="margin-top:2px;font-size:12px;color:var(--muted)">
+                        Book ~${r.bookDepth} shares · Max $${r.maxStake} (${r.maxShares} shares) · ${r.tolerance}% cost tolerance
+                      </div>
+                    </div>
+                  </div>`;
+                }
               }
             }
+          } catch (e) { /* liquidity info optional */ }
 
-            const isGuarding = effective >= threshold && raw > 0;
-            const dot = isGuarding ? '🔴' : raw > 0 ? '🟡' : '⚪';
-            const borderColor = isGuarding ? 'var(--red)' : 'var(--border)';
+          // === SUMMARY HEADER ===
+          const summaryColor = activeCount > 0 ? 'var(--red)' : totalRestrictions > 0 ? 'var(--yellow, #f0ad4e)' : 'var(--green)';
+          const summaryText = activeCount > 0
+            ? `🔴 ${activeCount} active block${activeCount > 1 ? 's' : ''} — bot is restricted`
+            : totalRestrictions > 0
+            ? `🟡 ${totalRestrictions} guardrails monitoring`
+            : '🟢 All clear — no restrictions';
 
-            html += `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;padding:6px 8px;background:var(--card);border-radius:6px;border:1px solid ${borderColor}">
-              <span>${dot}</span>
-              <div style="flex:1">
-                <div style="font-weight:600;font-size:13px">${p.name} <span class="muted tiny">(${hits} hits)${timeStr ? ' · ' + timeStr : ''}</span></div>
-                ${detail ? `<div style="margin-top:3px;font-size:12px;color:${isGuarding ? 'var(--red)' : 'var(--muted)'}">${detail}</div>` : '<div class="muted tiny">Inactive</div>'}
-              </div>
-            </div>`;
-          }
+          const summaryHtml = `<div style="padding:8px 12px;border-radius:6px;margin-bottom:10px;font-weight:600;font-size:13px;background:${activeCount > 0 ? 'rgba(255,107,107,0.1)' : 'rgba(255,255,255,0.03)'};border:1px solid ${summaryColor};color:${summaryColor}">
+            ${summaryText}
+          </div>`;
 
-          // Recent log
-          if (data.log && data.log.length > 0) {
-            html += '<div style="margin-top:8px;font-weight:600;font-size:12px">Recent Detections</div>';
-            for (const entry of data.log.slice(-5).reverse()) {
+          // Recent detection log
+          let logHtml = '';
+          if (phenData.log && phenData.log.length > 0) {
+            logHtml = '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)"><div style="font-weight:600;font-size:12px;margin-bottom:4px">Recent Detections</div>';
+            for (const entry of phenData.log.slice(-5).reverse()) {
               const ago = Math.round((Date.now() - entry.ts) / 60000);
-              html += `<div class="tiny muted" style="margin-top:2px">${ago}m ago — ${entry.name} on #${entry.trade_id} (${entry.side} $${entry.pnl?.toFixed(2)})</div>`;
+              const agoStr = ago < 60 ? `${ago}m ago` : `${Math.floor(ago/60)}h ${ago%60}m ago`;
+              logHtml += `<div class="tiny muted" style="margin-top:2px">${agoStr} — ${entry.name} on #${entry.trade_id} (${entry.side} $${entry.pnl?.toFixed(2)})</div>`;
             }
+            logHtml += '</div>';
           }
 
-          el.innerHTML = html;
+          el.innerHTML = summaryHtml + (html || '<div class="muted" style="font-size:12px">No pattern guards triggered yet</div>') + logHtml;
         } catch (e) {
-          console.error('Phenomena fetch error:', e);
+          console.error('Guardrails fetch error:', e);
         }
       }
 
@@ -1218,7 +1309,7 @@
       }
 
       async function refreshAll() {
-        await Promise.all([refreshMarket(), refreshPanels(), refreshKelly(), refreshAnalysis(), refreshPhenomena(), refreshExecutions()]);
+        await Promise.all([refreshMarket(), refreshPanels(), refreshKelly(), refreshAnalysis(), refreshGuardrails(), refreshExecutions()]);
       }
 
       $('tradeForm').addEventListener('submit', async (ev) => {
@@ -1293,7 +1384,7 @@
       setInterval(refreshBotStatus, 3000);
       setInterval(refreshKelly, 15000);
       setInterval(refreshAnalysis, 30000);
-      setInterval(refreshPhenomena, 15000);
+      setInterval(refreshGuardrails, 15000);
       setInterval(refreshExecutions, 15000);
     </script>
   </body>
