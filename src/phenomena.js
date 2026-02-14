@@ -34,15 +34,14 @@ const PHENOMENA = {
     },
     guard(signal, ctx) {
       const state = ctx.phenomenaState.ema_lag_reversal || {};
-      // If we just lost on this side consecutively, block the same side
       if (state.active_side && signal.side === state.active_side && state.consecutive_losses >= 2) {
-        // Cool down: skip next N trades on this side (N = consecutive losses - 1)
-        if (state.cooldown_remaining > 0) {
-          return { 
-            block: true, 
-            reason: `EMA_LAG_GUARD: ${state.consecutive_losses} consecutive ${signal.side.toUpperCase()} losses detected — skipping (${state.cooldown_remaining} cooldown remaining)` 
-          };
-        }
+        // Escalating multiplier: 2 consec = 1.5x, 3 = 1.75x, 4+ = 2x
+        const multiplier = Math.min(2.0, 1 + state.consecutive_losses * 0.25);
+        return {
+          block: false,
+          tighten: { min_slope_multiplier: multiplier, min_dist_multiplier: multiplier },
+          reason: `EMA_LAG_GUARD: ${state.consecutive_losses} consecutive ${signal.side.toUpperCase()} losses — requiring ${multiplier.toFixed(2)}x signal strength`,
+        };
       }
       return { block: false };
     },
