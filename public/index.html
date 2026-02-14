@@ -568,6 +568,7 @@
         }
 
         body.innerHTML = rows
+          .slice(-6)
           .map((p) => {
             const pnlTxt = p.pnl == null ? '-' : `${fmtUsd(p.pnl)} (${(p.pnl_pct || 0).toFixed(1)}%)`;
             return `
