@@ -11,6 +11,7 @@ const { getParams, getTuneLog, resetParams, setParam } = require('./autotuner');
 const { getLatestState: getEmaState, computeState: computeEmaState } = require('./strategies/ema');
 const { getState: getPhenomenaState, resetState: resetPhenomenaState } = require('./phenomena');
 const { getState: getBreakerState, resetState: resetBreakerState } = require('./circuitBreaker');
+const { calcLiquidityMax } = require('./liquidityCap');
 
 const app = express();
 app.use(express.json());
@@ -383,6 +384,26 @@ app.post('/api/breaker/reset', (req, res) => {
   try {
     resetBreakerState();
     res.json({ ok: true, message: 'Circuit breaker state cleared' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/liquidity', (req, res) => {
+  try {
+    const entryPrice = parseFloat(req.query.price) || 0.50;
+    const secsToEnd = parseInt(req.query.secs) || 180;
+    const result = calcLiquidityMax(entryPrice, secsToEnd);
+    
+    // Also generate full table
+    const table = {};
+    for (const price of [0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65]) {
+      table[price.toFixed(2)] = {};
+      for (const secs of [270, 240, 210, 180, 150]) {
+        const r = calcLiquidityMax(price, secs);
+        table[price.toFixed(2)][secs + 's'] = { maxStake: r.maxStake, maxShares: r.maxShares, bookDepth: r.bookDepth };
+      }
+    }
+    
+    res.json({ query: { entryPrice, secsToEnd }, result, table });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

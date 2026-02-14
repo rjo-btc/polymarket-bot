@@ -10,6 +10,7 @@ const { notify } = require('./notify');
 const { scoreSetup } = require('./confidence');
 const { checkGuards, consumeCooldown } = require('./phenomena');
 const { checkBreaker } = require('./circuitBreaker');
+const { liquidityCap } = require('./liquidityCap');
 
 const RISK_PCT = parseFloat(process.env.RISK_PCT) || 7; // % of current capital per trade
 const CAPITAL_START = parseFloat(process.env.CAPITAL_START_USD) || 1000;
@@ -276,6 +277,14 @@ async function traderLoop() {
               } else {
                 stakeUsd = getStakeSize();
               }
+
+              // Apply liquidity cap — prevents oversizing into thin books
+              const liqResult = liquidityCap(stakeUsd, entryPrice, secsToEnd);
+              if (liqResult.capped) {
+                console.log(`[Trader] ${liqResult.reason}`);
+                stakeUsd = liqResult.stake;
+              }
+
               const shares = stakeUsd / entryPrice;
 
               insertPosition.run({
@@ -335,7 +344,8 @@ async function traderLoop() {
               botStatus.openPositions++;
               console.log(`[Trader] ${decision.strategy.toUpperCase()} ENTERED ${decision.side.toUpperCase()} on ${market.market_slug}`);
               const tierInfo = kellyActive ? ` | T${confidence.tier} (${confidence.score})` : '';
-              notify(`📈 ENTERED ${decision.side.toUpperCase()} — $${stakeUsd.toFixed(2)} via ${decision.strategy} @ ${entryPrice.toFixed(3)} | BTC $${btc.price.toFixed(2)} | ${secsToEnd}s to end${tierInfo}`);
+              const liqInfo = liqResult.capped ? ` | 🔒 LIQ CAP (book ~${liqResult.meta.bookDepth})` : '';
+              notify(`📈 ENTERED ${decision.side.toUpperCase()} — $${stakeUsd.toFixed(2)} via ${decision.strategy} @ ${entryPrice.toFixed(3)} | BTC $${btc.price.toFixed(2)} | ${secsToEnd}s to end${tierInfo}${liqInfo}`);
             }
           }
         }
