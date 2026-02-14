@@ -370,7 +370,7 @@ app.get('/api/phenomena', (req, res) => {
 app.post('/api/phenomena/reset', (req, res) => {
   try {
     resetPhenomenaState();
-    res.json({ ok: true, message: 'Phenomena state cleared' });
+    res.json({ ok: true, message: 'Trend guardrails state cleared' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -1,5 +1,5 @@
 /**
- * Phenomena Detection System
+ * Trend Guardrails System
  * 
  * Learns from specific failure/success patterns and applies real-time guards.
  * Each phenomenon has:
@@ -191,7 +191,7 @@ function loadState() {
       phenomenaLog = saved.log || [];
     }
   } catch (e) {
-    console.error('[Phenomena] Failed to load state:', e.message);
+    console.error('[TrendGuardrails] Failed to load state:', e.message);
   }
 }
 
@@ -199,7 +199,7 @@ function saveState() {
   try {
     kvSet.run({ key: PHENOMENA_KEY, value: JSON.stringify({ state: phenomenaState, log: phenomenaLog.slice(-100) }) });
   } catch (e) {
-    console.error('[Phenomena] Failed to save state:', e.message);
+    console.error('[TrendGuardrails] Failed to save state:', e.message);
   }
 }
 
@@ -259,10 +259,10 @@ function onTradeResolved(trade) {
           pnl: trade.pnl,
         });
 
-        console.log(`[Phenomena] DETECTED: ${phenomenon.name} — trade #${trade.id} (${trade.side} ${trade.pnl > 0 ? 'WIN' : 'LOSS'})`);
+        console.log(`[TrendGuardrails] DETECTED: ${phenomenon.name} — trade #${trade.id} (${trade.side} ${trade.pnl > 0 ? 'WIN' : 'LOSS'})`);
       }
     } catch (e) {
-      console.error(`[Phenomena] Error detecting ${key}:`, e.message);
+      console.error(`[TrendGuardrails] Error detecting ${key}:`, e.message);
     }
   }
 
@@ -274,7 +274,7 @@ function onTradeResolved(trade) {
     if (trade.pnl >= 0) {
       ds.win_streak = (ds.win_streak || 0) + 1;
       ds.loss_streak = 0; // win breaks loss streak
-      console.log(`[Phenomena] Directional: ${trade.side.toUpperCase()} WIN streak ${ds.win_streak} — trend confirmed`);
+      console.log(`[TrendGuardrails] Directional: ${trade.side.toUpperCase()} WIN streak ${ds.win_streak} — trend confirmed`);
     } else {
       ds.loss_streak = (ds.loss_streak || 0) + 1;
       ds.win_streak = 0; // loss breaks win streak
@@ -295,7 +295,7 @@ function onTradeResolved(trade) {
         s.consecutive_losses = 0;
         s.cooldown_remaining = 0;
         s.active_side = null;
-        console.log(`[Phenomena] CLEARED: EMA Lag Reversal (${trade.side} WIN)`);
+        console.log(`[TrendGuardrails] CLEARED: EMA Lag Reversal (${trade.side} WIN)`);
       }
       if (key === 'side_streak_loss' && s.losing_side === trade.side) {
         s.streak = Math.max(0, (s.streak || 0) - 1);
@@ -333,7 +333,7 @@ function checkGuards(signal) {
         results.push({ key, ...guard });
       }
     } catch (e) {
-      console.error(`[Phenomena] Guard error ${key}:`, e.message);
+      console.error(`[TrendGuardrails] Guard error ${key}:`, e.message);
     }
   }
 
@@ -378,7 +378,7 @@ function resetState() {
   phenomenaState = {};
   phenomenaLog = [];
   saveState();
-  console.log('[Phenomena] State reset');
+  console.log('[TrendGuardrails] State reset');
 }
 
 module.exports = { onTradeResolved, checkGuards, consumeCooldown, getState, resetState, PHENOMENA };

@@ -194,7 +194,7 @@ async function traderLoop() {
               // Check phenomena guards before entering
               const guardResult = checkGuards({ side: decision.side, strategy: decision.strategy, entry_price: entryPrice });
               if (guardResult.block) {
-                console.log(`[Trader] PHENOMENA BLOCKED: ${guardResult.reason}`);
+                console.log(`[Trader] TREND GUARDRAIL BLOCKED: ${guardResult.reason}`);
                 insertDecision.run({
                   strategy: decision.strategy,
                   market_slug: market.market_slug,
@@ -221,7 +221,7 @@ async function traderLoop() {
                   const paMatch2 = (decision.reason || '').match(/slope=([-.0-9]+)/);
                   const actualSlope = paMatch2 ? Math.abs(parseFloat(paMatch2[1])) : 0;
                   if (actualSlope < requiredSlope) {
-                    console.log(`[Trader] PHENOMENA TIGHTEN: slope ${actualSlope.toFixed(2)} < required ${requiredSlope.toFixed(2)} — ${guardResult.reasons.join('; ')}`);
+                    console.log(`[Trader] TREND GUARDRAIL TIGHTEN: slope ${actualSlope.toFixed(2)} < required ${requiredSlope.toFixed(2)} — ${guardResult.reasons.join('; ')}`);
                     continue;
                   }
                 }
@@ -232,16 +232,16 @@ async function traderLoop() {
                   const distMatch = (decision.reason || '').match(/(?<![e])dist=([.0-9]+)/);
                   const actualDist = edistMatch ? parseFloat(edistMatch[1]) : (distMatch ? parseFloat(distMatch[1]) : 0);
                   if (actualDist < requiredDist) {
-                    console.log(`[Trader] PHENOMENA TIGHTEN: edist ${actualDist.toFixed(1)} < required ${requiredDist.toFixed(1)} — ${guardResult.reasons.join('; ')}`);
+                    console.log(`[Trader] TREND GUARDRAIL TIGHTEN: edist ${actualDist.toFixed(1)} < required ${requiredDist.toFixed(1)} — ${guardResult.reasons.join('; ')}`);
                     continue;
                   }
                 }
                 if (guardResult.tighten.max_entry_override && entryPrice > guardResult.tighten.max_entry_override) {
-                  console.log(`[Trader] PHENOMENA TIGHTEN: entry ${entryPrice.toFixed(3)} > temp cap ${guardResult.tighten.max_entry_override} — ${guardResult.reasons.join('; ')}`);
+                  console.log(`[Trader] TREND GUARDRAIL TIGHTEN: entry ${entryPrice.toFixed(3)} > temp cap ${guardResult.tighten.max_entry_override} — ${guardResult.reasons.join('; ')}`);
                   continue;
                 }
                 if (guardResult.reasons.length > 0) {
-                  console.log(`[Trader] PHENOMENA WARN (proceeding): ${guardResult.reasons.join('; ')}`);
+                  console.log(`[Trader] TREND GUARDRAIL WARN (proceeding): ${guardResult.reasons.join('; ')}`);
                 }
               }
 

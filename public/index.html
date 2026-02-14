@@ -355,7 +355,7 @@
         </div>
 
         <div style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px">
-          <div style="font-weight: 700; margin-bottom: 6px">🔍 Phenomena Detection</div>
+          <div style="font-weight: 700; margin-bottom: 6px">🛡️ Trend Guardrails</div>
           <div class="muted tiny">Learns from failure patterns and applies real-time guards</div>
           <div id="phenomenaContent" style="margin-top: 10px">
             <div class="muted">Loading...</div>
@@ -1050,7 +1050,7 @@
           const data = await fetchJSON('/api/phenomena');
           const el = $('phenomenaContent');
           if (!data.phenomena || data.phenomena.length === 0) {
-            el.innerHTML = '<div class="muted">No phenomena registered</div>';
+            el.innerHTML = '<div class="muted">No guardrails registered</div>';
             return;
           }
 

@@ -80,7 +80,7 @@ async function resolveExpiredPositions() {
         btc_price_at_entry: pos.btc_price_at_entry,
         filter_version: pos.filter_version,
       });
-    } catch (e) { console.error('[Resolver] Phenomena error:', e.message); }
+    } catch (e) { console.error('[Resolver] TrendGuardrails error:', e.message); }
 
     // Run auto-tuner after every resolution
     try { autoTune(); } catch (e) { console.error('[Resolver] AutoTune error:', e.message); }
@@ -209,7 +209,7 @@ function buildLossExplanation(pos, btcStart, btcEnd, btcWentUp, pnl) {
   }
   if (activePhenomena.length > 0) {
     lines.push('');
-    lines.push(`⚡ Active phenomena: ${activePhenomena.join(', ')}`);
+    lines.push(`⚡ Active guardrails: ${activePhenomena.join(', ')}`);
   }
 
   // Consecutive loss tracking
