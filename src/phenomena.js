@@ -1,0 +1,295 @@
+/**
+ * Phenomena Detection System
+ * 
+ * Learns from specific failure/success patterns and applies real-time guards.
+ * Each phenomenon has:
+ *   - detect(trade, context): returns true if this pattern caused the outcome
+ *   - guard(signal, context): returns { block, reason } if the pattern is currently active and dangerous
+ *   - state: tracked hits, streaks, cooldowns
+ * 
+ * Phenomena persist to SQLite kv table. New ones can be added as we discover them.
+ */
+
+const { kvGet, kvSet, getAllPositions } = require('./db');
+
+const PHENOMENA_KEY = 'phenomena_state';
+
+// --- Phenomenon Definitions ---
+
+const PHENOMENA = {
+  ema_lag_reversal: {
+    name: 'EMA Lag Reversal',
+    description: 'EMAs still bearish/bullish from earlier move, but price is reversing. Bot keeps trading the old direction into the new trend.',
+    detect(trade, ctx) {
+      // Triggered when: loss + the actual BTC move was opposite to our bet
+      // AND the previous trade was also the same side and also lost
+      if (trade.pnl >= 0) return false;
+      
+      const recent = ctx.recentResolved;
+      if (recent.length < 2) return false;
+      
+      const prev = recent[recent.length - 2];
+      // Same side, both losses = EMA lag (kept betting same direction)
+      return prev.side === trade.side && prev.pnl < 0;
+    },
+    guard(signal, ctx) {
+      const state = ctx.phenomenaState.ema_lag_reversal || {};
+      // If we just lost on this side consecutively, block the same side
+      if (state.active_side && signal.side === state.active_side && state.consecutive_losses >= 2) {
+        // Cool down: skip next N trades on this side (N = consecutive losses - 1)
+        if (state.cooldown_remaining > 0) {
+          return { 
+            block: true, 
+            reason: `EMA_LAG_GUARD: ${state.consecutive_losses} consecutive ${signal.side.toUpperCase()} losses detected — skipping (${state.cooldown_remaining} cooldown remaining)` 
+          };
+        }
+      }
+      return { block: false };
+    },
+  },
+
+  side_streak_loss: {
+    name: 'Side Streak Loss',
+    description: 'One side (UP or DOWN) is on a losing streak — market regime may have shifted.',
+    detect(trade, ctx) {
+      if (trade.pnl >= 0) return false;
+      const recent = ctx.recentResolved.slice(-5);
+      const sameSide = recent.filter(t => t.side === trade.side);
+      const sameSideLosses = sameSide.filter(t => t.pnl < 0);
+      return sameSideLosses.length >= 3;
+    },
+    guard(signal, ctx) {
+      const state = ctx.phenomenaState.side_streak_loss || {};
+      if (state.losing_side === signal.side && state.streak >= 3) {
+        // Require extra strong signal: higher slope/dist thresholds
+        return {
+          block: false,
+          tighten: { min_slope_multiplier: 1.5, min_dist_multiplier: 1.5 },
+          reason: `SIDE_STREAK_WARN: ${signal.side.toUpperCase()} has ${state.streak} recent losses — requiring stronger signal`,
+        };
+      }
+      return { block: false };
+    },
+  },
+
+  flat_market_chop: {
+    name: 'Flat Market Chop',
+    description: 'BTC is range-bound, EMAs are too close together. Signals are noise, not trend.',
+    detect(trade, ctx) {
+      if (trade.pnl >= 0) return false;
+      // Check if the BTC move was tiny (< 30 bps between start and end)
+      const btcStart = trade.btc_price_at_start;
+      const btcEnd = trade.btc_price_at_entry; // approximate
+      if (!btcStart) return false;
+      const moveBps = Math.abs((btcEnd - btcStart) / btcStart) * 10000;
+      return moveBps < 15; // very flat
+    },
+    guard(signal, ctx) {
+      const state = ctx.phenomenaState.flat_market_chop || {};
+      if (state.recent_chop_losses >= 2) {
+        return {
+          block: false,
+          tighten: { min_dist_multiplier: 2.0 },
+          reason: `CHOP_GUARD: ${state.recent_chop_losses} recent losses in flat markets — requiring 2x EMA distance`,
+        };
+      }
+      return { block: false };
+    },
+  },
+
+  expensive_entry_trap: {
+    name: 'Expensive Entry Trap', 
+    description: 'High entry prices (>0.55) that look safe but offer terrible R:R. One loss wipes multiple wins.',
+    detect(trade, ctx) {
+      if (trade.pnl >= 0) return false;
+      return trade.entry_price >= 0.55;
+    },
+    guard(signal, ctx) {
+      const state = ctx.phenomenaState.expensive_entry_trap || {};
+      if (state.recent_expensive_losses >= 2) {
+        return {
+          block: false,
+          tighten: { max_entry_override: 0.50 },
+          reason: `ENTRY_TRAP_GUARD: ${state.recent_expensive_losses} recent losses at >0.55 entry — temporarily capping at 0.50`,
+        };
+      }
+      return { block: false };
+    },
+  },
+};
+
+// --- State Management ---
+
+let phenomenaState = {};
+let phenomenaLog = [];
+
+function loadState() {
+  try {
+    const row = kvGet.get(PHENOMENA_KEY);
+    if (row) {
+      const saved = JSON.parse(row.value);
+      phenomenaState = saved.state || {};
+      phenomenaLog = saved.log || [];
+    }
+  } catch (e) {
+    console.error('[Phenomena] Failed to load state:', e.message);
+  }
+}
+
+function saveState() {
+  try {
+    kvSet.run({ key: PHENOMENA_KEY, value: JSON.stringify({ state: phenomenaState, log: phenomenaLog.slice(-100) }) });
+  } catch (e) {
+    console.error('[Phenomena] Failed to save state:', e.message);
+  }
+}
+
+// Called after each trade resolves
+function onTradeResolved(trade) {
+  const allResolved = getAllPositions.all().filter(p => p.status === 'resolved');
+  allResolved.sort((a, b) => a.id - b.id);
+  
+  const ctx = { recentResolved: allResolved.slice(-10), phenomenaState };
+
+  for (const [key, phenomenon] of Object.entries(PHENOMENA)) {
+    try {
+      if (phenomenon.detect(trade, ctx)) {
+        // Update state for this phenomenon
+        if (!phenomenaState[key]) phenomenaState[key] = {};
+        const s = phenomenaState[key];
+        
+        s.last_triggered = Date.now();
+        s.total_hits = (s.total_hits || 0) + 1;
+
+        // Phenomenon-specific state updates
+        if (key === 'ema_lag_reversal') {
+          if (s.active_side === trade.side) {
+            s.consecutive_losses = (s.consecutive_losses || 0) + 1;
+          } else {
+            s.active_side = trade.side;
+            s.consecutive_losses = 2; // at least 2 to detect
+          }
+          s.cooldown_remaining = Math.min(s.consecutive_losses - 1, 3); // skip 1-3 trades
+        }
+
+        if (key === 'side_streak_loss') {
+          s.losing_side = trade.side;
+          const sameSideLosses = allResolved.slice(-8).filter(t => t.side === trade.side && t.pnl < 0);
+          s.streak = sameSideLosses.length;
+        }
+
+        if (key === 'flat_market_chop') {
+          s.recent_chop_losses = (s.recent_chop_losses || 0) + 1;
+          // Decay after 30 min
+          s.decay_after = Date.now() + 30 * 60 * 1000;
+        }
+
+        if (key === 'expensive_entry_trap') {
+          s.recent_expensive_losses = (s.recent_expensive_losses || 0) + 1;
+          s.decay_after = Date.now() + 60 * 60 * 1000;
+        }
+
+        phenomenaLog.push({
+          ts: Date.now(),
+          phenomenon: key,
+          name: phenomenon.name,
+          trade_id: trade.id,
+          side: trade.side,
+          pnl: trade.pnl,
+        });
+
+        console.log(`[Phenomena] DETECTED: ${phenomenon.name} — trade #${trade.id} (${trade.side} ${trade.pnl > 0 ? 'WIN' : 'LOSS'})`);
+      }
+    } catch (e) {
+      console.error(`[Phenomena] Error detecting ${key}:`, e.message);
+    }
+  }
+
+  // Decay cooldowns on wins
+  if (trade.pnl > 0) {
+    for (const [key, s] of Object.entries(phenomenaState)) {
+      if (key === 'ema_lag_reversal' && s.active_side === trade.side) {
+        // Win on the same side = reversal over, clear guard
+        s.consecutive_losses = 0;
+        s.cooldown_remaining = 0;
+        s.active_side = null;
+        console.log(`[Phenomena] CLEARED: EMA Lag Reversal (${trade.side} WIN)`);
+      }
+      if (key === 'side_streak_loss' && s.losing_side === trade.side) {
+        s.streak = Math.max(0, (s.streak || 0) - 1);
+      }
+    }
+  }
+
+  // Time-based decay
+  const now = Date.now();
+  for (const [key, s] of Object.entries(phenomenaState)) {
+    if (s.decay_after && now > s.decay_after) {
+      if (key === 'flat_market_chop') s.recent_chop_losses = 0;
+      if (key === 'expensive_entry_trap') s.recent_expensive_losses = 0;
+      delete s.decay_after;
+    }
+  }
+
+  saveState();
+}
+
+// Called before entering a trade — returns combined guard result
+function checkGuards(signal) {
+  const ctx = { phenomenaState };
+  const results = [];
+
+  // Decay cooldowns for ema_lag_reversal
+  if (phenomenaState.ema_lag_reversal?.cooldown_remaining > 0) {
+    // Cooldown ticks down each time we check (per market cycle)
+  }
+
+  for (const [key, phenomenon] of Object.entries(PHENOMENA)) {
+    try {
+      const guard = phenomenon.guard(signal, ctx);
+      if (guard.block || guard.tighten || guard.reason) {
+        results.push({ key, ...guard });
+      }
+    } catch (e) {
+      console.error(`[Phenomena] Guard error ${key}:`, e.message);
+    }
+  }
+
+  // Combine: if any block, block. Merge all tighten multipliers (take max).
+  const blocked = results.find(r => r.block);
+  if (blocked) return { block: true, reason: blocked.reason, phenomena: results };
+
+  const tightens = results.filter(r => r.tighten);
+  let combined_tighten = null;
+  if (tightens.length > 0) {
+    combined_tighten = {};
+    for (const t of tightens) {
+      for (const [k, v] of Object.entries(t.tighten)) {
+        combined_tighten[k] = Math.max(combined_tighten[k] || 1, v);
+      }
+    }
+  }
+
+  const reasons = results.filter(r => r.reason).map(r => r.reason);
+  return { 
+    block: false, 
+    tighten: combined_tighten, 
+    reasons,
+    phenomena: results,
+  };
+}
+
+// Consume a cooldown tick (called when a trade is skipped due to guard)
+function consumeCooldown(key) {
+  if (phenomenaState[key]?.cooldown_remaining > 0) {
+    phenomenaState[key].cooldown_remaining--;
+    saveState();
+  }
+}
+
+function getState() { return { state: phenomenaState, log: phenomenaLog.slice(-50), phenomena: Object.keys(PHENOMENA).map(k => ({ key: k, name: PHENOMENA[k].name, description: PHENOMENA[k].description })) }; }
+
+// Init
+loadState();
+
+module.exports = { onTradeResolved, checkGuards, consumeCooldown, getState, PHENOMENA };

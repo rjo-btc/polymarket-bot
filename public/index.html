@@ -327,6 +327,14 @@
         </div>
       </section>
 
+      <section class="card" style="margin-top: 14px" id="phenomenaCard">
+        <div style="font-weight: 700; margin-bottom: 6px">🔍 Phenomena Detection</div>
+        <div class="muted tiny">Learns from failure patterns and applies real-time guards • Auto-updates</div>
+        <div id="phenomenaContent" style="margin-top: 10px">
+          <div class="muted">Loading...</div>
+        </div>
+      </section>
+
       <section class="card" style="margin-top: 14px" id="analysisCard">
         <div style="font-weight: 700; margin-bottom: 6px">Win/Loss Analysis</div>
         <div class="muted tiny">Pattern detection comparing wins vs losses • Auto-updates after each trade</div>
@@ -925,8 +933,60 @@
         }
       }
 
+      async function refreshPhenomena() {
+        try {
+          const data = await fetchJSON('/api/phenomena');
+          const el = $('phenomenaContent');
+          if (!data.phenomena || data.phenomena.length === 0) {
+            el.innerHTML = '<div class="muted">No phenomena registered</div>';
+            return;
+          }
+
+          let html = '';
+          for (const p of data.phenomena) {
+            const state = data.state[p.key] || {};
+            const isActive = state.last_triggered && (Date.now() - state.last_triggered < 3600000);
+            const hits = state.total_hits || 0;
+            const dot = isActive ? '🔴' : hits > 0 ? '🟡' : '⚪';
+            
+            let detail = '';
+            if (p.key === 'ema_lag_reversal' && state.active_side) {
+              detail = `Active: ${state.active_side.toUpperCase()} (${state.consecutive_losses || 0} consec losses, ${state.cooldown_remaining || 0} cooldown)`;
+            } else if (p.key === 'side_streak_loss' && state.losing_side) {
+              detail = `${state.losing_side.toUpperCase()} streak: ${state.streak || 0} losses → requiring 1.5x signals`;
+            } else if (p.key === 'flat_market_chop') {
+              detail = `Chop losses: ${state.recent_chop_losses || 0}${state.recent_chop_losses >= 2 ? ' → requiring 2x EMA dist' : ''}`;
+            } else if (p.key === 'expensive_entry_trap') {
+              detail = `Expensive losses: ${state.recent_expensive_losses || 0}${state.recent_expensive_losses >= 2 ? ' → temp cap 0.50' : ''}`;
+            }
+
+            html += `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;padding:6px 8px;background:var(--card);border-radius:6px;border:1px solid ${isActive ? 'var(--red)' : 'var(--border)'}">
+              <span>${dot}</span>
+              <div style="flex:1">
+                <div style="font-weight:600;font-size:13px">${p.name} <span class="muted tiny">(${hits} hits)</span></div>
+                <div class="muted tiny">${p.description}</div>
+                ${detail ? `<div style="margin-top:3px;font-size:12px;color:${isActive ? 'var(--red)' : 'var(--blue)'}">${detail}</div>` : ''}
+              </div>
+            </div>`;
+          }
+
+          // Recent log
+          if (data.log && data.log.length > 0) {
+            html += '<div style="margin-top:8px;font-weight:600;font-size:12px">Recent Detections</div>';
+            for (const entry of data.log.slice(-5).reverse()) {
+              const ago = Math.round((Date.now() - entry.ts) / 60000);
+              html += `<div class="tiny muted" style="margin-top:2px">${ago}m ago — ${entry.name} on #${entry.trade_id} (${entry.side} $${entry.pnl?.toFixed(2)})</div>`;
+            }
+          }
+
+          el.innerHTML = html;
+        } catch (e) {
+          console.error('Phenomena fetch error:', e);
+        }
+      }
+
       async function refreshAll() {
-        await Promise.all([refreshMarket(), refreshPanels(), refreshKelly(), refreshAnalysis()]);
+        await Promise.all([refreshMarket(), refreshPanels(), refreshKelly(), refreshAnalysis(), refreshPhenomena()]);
       }
 
       $('tradeForm').addEventListener('submit', async (ev) => {
@@ -1001,6 +1061,7 @@
       setInterval(refreshBotStatus, 3000);
       setInterval(refreshKelly, 15000);
       setInterval(refreshAnalysis, 30000);
+      setInterval(refreshPhenomena, 15000);
     </script>
   </body>
 </html>

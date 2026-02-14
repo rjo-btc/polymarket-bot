@@ -2,6 +2,7 @@ const { getOpenPositions, resolvePosition } = require('./db');
 const { getBtcPrice } = require('./btcPrice');
 const { autoTune } = require('./autotuner');
 const { notify } = require('./notify');
+const { onTradeResolved } = require('./phenomena');
 
 async function resolveExpiredPositions() {
   const open = getOpenPositions.all();
@@ -52,6 +53,20 @@ async function resolveExpiredPositions() {
     const emoji = won ? '✅' : '❌';
     const pnlSign = pnl >= 0 ? '+' : '';
     notify(`${emoji} #${pos.id} ${won ? 'WON' : 'LOST'} — ${pnlSign}$${pnl.toFixed(2)} (${pos.strategy} ${pos.side.toUpperCase()}) | BTC $${btcStart.toFixed(0)}→$${btcEnd.toFixed(0)}`);
+
+    // Run phenomena detection after every resolution
+    try {
+      onTradeResolved({
+        id: pos.id,
+        side: pos.side,
+        pnl: Math.round(pnl * 100) / 100,
+        entry_price: pos.entry_price,
+        strategy: pos.strategy,
+        btc_price_at_start: btcStart,
+        btc_price_at_entry: pos.btc_price_at_entry,
+        filter_version: pos.filter_version,
+      });
+    } catch (e) { console.error('[Resolver] Phenomena error:', e.message); }
 
     // Run auto-tuner after every resolution
     try { autoTune(); } catch (e) { console.error('[Resolver] AutoTune error:', e.message); }
