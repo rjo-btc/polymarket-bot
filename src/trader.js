@@ -190,6 +190,19 @@ async function traderLoop() {
                 });
                 continue;
               }
+              // Circuit breaker decay: apply tighten if decayed past hard block
+              if (breakerResult.tighten) {
+                const priceDist = emaState?.price_dist_bps ?? 0;
+                const slopeAbs = emaState?.slope_abs ?? 0;
+                const mult = breakerResult.tighten.min_dist_multiplier || 1;
+                const reqDist = 3 * mult;
+                const reqSlope = (tp.min_slope_abs || 2) * (breakerResult.tighten.min_slope_multiplier || 1);
+                if (priceDist < reqDist || slopeAbs < reqSlope) {
+                  console.log(`[Trader] CIRCUIT BREAKER TIGHTEN: dist ${priceDist.toFixed(1)} < ${reqDist.toFixed(1)} or slope ${slopeAbs.toFixed(2)} < ${reqSlope.toFixed(2)} — ${breakerResult.reason}`);
+                  continue;
+                }
+                console.log(`[Trader] CIRCUIT BREAKER DECAY (proceeding): ${breakerResult.reason}`);
+              }
 
               // Check phenomena guards before entering
               const guardResult = checkGuards({ side: decision.side, strategy: decision.strategy, entry_price: entryPrice });

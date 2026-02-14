@@ -15,7 +15,8 @@ const { kvGet, kvSet } = require('./db');
 const { notify } = require('./notify');
 
 const BREAKER_KEY = 'circuit_breaker_state';
-const BREACH_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours default
+const BREACH_TTL_MS = 30 * 60 * 1000; // 30 minutes default
+const DECAY_INTERVAL_MS = 10 * 60 * 1000; // decay 50% severity every 10 min
 
 let breakerState = { breaches: [], totalBreaches: 0 };
 
@@ -152,10 +153,10 @@ function reportBreach(trade, violations, tradeMetrics) {
     `Violations found:`,
     ...violations.map(v => `  • ${v}`),
     ``,
-    `Auto-correction: blocking similar signals for ${BREACH_TTL_MS / 3600000}h`,
+    `Auto-correction: hard block for 10m → tighten 1.5x at 10m → 1.25x at 20m → expires at 30m`,
     `Rules activated: ${rules.map(r => r.type).join(', ')}`,
     ``,
-    `This breach will auto-expire or clear on a winning trade in the same category.`,
+    `Clears early on a winning trade in the same direction.`,
   ].join('\n');
 
   notify(msg, 'loss_analysis');
@@ -178,53 +179,72 @@ function checkBreaker(signal) {
 
   if (breakerState.breaches.length === 0) return { block: false, reason: null };
 
-  // Check each active breach's rules
+  // Check each active breach's rules with time-based decay
   const matchingBreaches = [];
   for (const breach of breakerState.breaches) {
+    // Calculate decay level: 0-10 min = full block, 10-20 min = tighten 1.5x, 20-30 min = tighten 1.25x
+    const ageMs = now - breach.created_at;
+    const decaySteps = Math.floor(ageMs / DECAY_INTERVAL_MS);
+    
+    // After 3 decay steps (30 min), breach expires naturally via TTL
+    if (decaySteps >= 3) continue;
+
     for (const ruleType of breach.ruleTypes) {
-      let blocked = false;
+      let matched = false;
       
       switch (ruleType) {
         case 'min_dist':
           const dist = signal.edist ?? signal.dist ?? 999;
-          blocked = dist < (signal.min_ema_dist_bps || 5);
+          matched = dist < (signal.min_ema_dist_bps || 5);
           break;
         case 'min_slope':
-          blocked = Math.abs(signal.slope || 999) < (signal.min_slope_abs || 2);
+          matched = Math.abs(signal.slope || 999) < (signal.min_slope_abs || 2);
           break;
         case 'max_entry':
-          blocked = signal.entry_price > (signal.max_entry_price || 0.65);
+          matched = signal.entry_price > (signal.max_entry_price || 0.65);
           break;
         case 'ema_lag_block':
-          blocked = signal.side === breach.side;
+          matched = signal.side === breach.side;
           break;
         case 'side_streak_block':
-          blocked = signal.side === breach.side;
+          matched = signal.side === breach.side;
           break;
         case 'chop_block':
-          // Only block if signal dist is still weak (< 2x minimum)
-          const chopDist = signal.edist ?? signal.dist ?? 0;
-          blocked = chopDist < (signal.min_ema_dist_bps || 5) * 2;
+          const chopDist = signal.price_dist ?? signal.dist ?? 0;
+          matched = chopDist < (signal.min_ema_dist_bps || 5) * 2;
           break;
         case 'expensive_entry_block':
-          blocked = signal.entry_price > 0.50;
+          matched = signal.entry_price > 0.50;
           break;
       }
 
-      if (blocked) {
-        matchingBreaches.push({ breach, ruleType });
+      if (matched) {
+        matchingBreaches.push({ breach, ruleType, decaySteps });
       }
     }
   }
 
   if (matchingBreaches.length > 0) {
-    const reasons = matchingBreaches.map(m => 
-      `CIRCUIT_BREAKER: ${m.ruleType} (from trade #${m.breach.trade_id})`
-    );
-    return { 
-      block: true, 
-      reason: reasons.join('; '),
-    };
+    const minDecay = Math.min(...matchingBreaches.map(m => m.decaySteps));
+    
+    if (minDecay === 0) {
+      // First 10 min: hard block
+      const reasons = matchingBreaches.map(m => 
+        `CIRCUIT_BREAKER: ${m.ruleType} (trade #${m.breach.trade_id})`
+      );
+      return { block: true, reason: reasons.join('; ') };
+    } else {
+      // 10-30 min: decay to tighten (1.5x at 10min, 1.25x at 20min)
+      const multiplier = minDecay === 1 ? 1.5 : 1.25;
+      const reasons = matchingBreaches.map(m => 
+        `CIRCUIT_BREAKER_DECAY: ${m.ruleType} (trade #${m.breach.trade_id}, ${m.decaySteps * 10}min decay → ${multiplier}x)`
+      );
+      return { 
+        block: false, 
+        tighten: { min_dist_multiplier: multiplier, min_slope_multiplier: multiplier },
+        reason: reasons.join('; '),
+      };
+    }
   }
 
   return { block: false, reason: null };
