@@ -8,7 +8,7 @@ const { buildWinProfile, TIER_MULTIPLIERS, TIER_THRESHOLDS } = require('./confid
 const { drainNotifications } = require('./notify');
 const { runAnalysis } = require('./analysis');
 const { getParams, getTuneLog, resetParams, setParam } = require('./autotuner');
-const { getLatestState: getEmaState } = require('./strategies/ema');
+const { getLatestState: getEmaState, computeState: computeEmaState } = require('./strategies/ema');
 const { getState: getPhenomenaState } = require('./phenomena');
 
 const app = express();
@@ -65,7 +65,7 @@ app.get('/api/market', async (req, res) => {
       btc_price_prev_updated_at: prevBtc.updatedAt,
       btc_price_at_market_start: btcAtStart,
       btc_start_price_source: 'tick_at_or_after',
-      ema_state: getEmaState(),
+      ema_state: getEmaState() || await computeEmaState(),
     });
   } catch (e) {
     console.error('GET /api/market error:', e);
@@ -442,6 +442,9 @@ app.get('/api/decisions', (req, res) => {
 // Start everything
 startPricePolling(2000);
 startTrader(10000);
+// Refresh EMA state every 10s for dashboard
+setInterval(() => computeEmaState().catch(() => {}), 10000);
+computeEmaState().catch(() => {});
 
 app.listen(PORT, () => {
   console.log(`🚀 Polymarket BTC 5m Paper Trader running on port ${PORT}`);

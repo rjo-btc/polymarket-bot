@@ -145,6 +145,37 @@ async function evaluate(market, btcPrice) {
 
 // Expose latest EMA state for dashboard
 let _latestState = null;
+
+async function computeState() {
+  try {
+    const p = params.ema;
+    const klines = await fetchKlines(250);
+    if (klines.length < 200) return _latestState;
+    const closes = klines.map(k => k.close);
+    const price = closes[closes.length - 1];
+    const ema20 = calcEMA(closes, 20);
+    const ema200 = calcEMA(closes, 200);
+    const fast = ema20[ema20.length - 1];
+    const slow = ema200[ema200.length - 1];
+    const fastPrev = ema20[ema20.length - 2];
+    const slope = fast - fastPrev;
+    const emaDistBps = ((fast - slow) / slow) * 10000;
+    _latestState = {
+      ema_dist_bps: parseFloat(Math.abs(emaDistBps).toFixed(1)),
+      slope: parseFloat(slope.toFixed(4)),
+      slope_abs: parseFloat(Math.abs(slope).toFixed(4)),
+      ema20: parseFloat(fast.toFixed(2)),
+      ema200: parseFloat(slow.toFixed(2)),
+      min_dist_bps: p.min_ema_dist_bps ?? 5,
+      min_slope: p.min_slope_abs ?? 2,
+      long_min_dist: p.long_min_dist_bps ?? 8,
+      long_min_slope: p.long_min_slope ?? 6,
+      updated_at: new Date().toISOString(),
+    };
+  } catch (e) { /* keep last state */ }
+  return _latestState;
+}
+
 function getLatestState() { return _latestState; }
 
-module.exports = { evaluate, getLatestState };
+module.exports = { evaluate, getLatestState, computeState };
