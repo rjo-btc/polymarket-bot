@@ -7,7 +7,7 @@ const { startTrader, getBotStatus } = require('./trader');
 const { buildWinProfile, TIER_MULTIPLIERS, TIER_THRESHOLDS } = require('./confidence');
 const { drainNotifications } = require('./notify');
 const { runAnalysis } = require('./analysis');
-const { getParams, getTuneLog } = require('./autotuner');
+const { getParams, getTuneLog, resetParams, setParam } = require('./autotuner');
 
 const app = express();
 app.use(express.json());
@@ -318,6 +318,23 @@ app.get('/api/kelly', (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+app.post('/api/autotuner/reset', (req, res) => {
+  try {
+    const params = resetParams();
+    res.json({ ok: true, params });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/autotuner/set', (req, res) => {
+  try {
+    const { strat, key, value } = req.body;
+    if (!strat || !key || value === undefined) return res.status(400).json({ error: 'need strat, key, value' });
+    const ok = setParam(strat, key, value);
+    if (!ok) return res.status(400).json({ error: `unknown param ${strat}.${key}` });
+    res.json({ ok: true, params: getParams() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/analysis', (req, res) => {

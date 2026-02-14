@@ -327,4 +327,21 @@ function getTuneLog() {
   return [...tuneLog];
 }
 
-module.exports = { autoTune, getParams, getTuneLog, params };
+function resetParams() {
+  // Reset to defaults, clear saved
+  const fresh = JSON.parse(JSON.stringify(defaults));
+  Object.assign(params, fresh);
+  saveParams();
+  return params;
+}
+
+function setParam(strat, key, value) {
+  if (params[strat] && key in params[strat]) {
+    params[strat][key] = value;
+    saveParams();
+    return true;
+  }
+  return false;
+}
+
+module.exports = { autoTune, getParams, getTuneLog, params, resetParams, setParam };
