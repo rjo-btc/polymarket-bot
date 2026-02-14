@@ -1,0 +1,8 @@
+#!/bin/sh
+echo "🔬 Running test suite before push..."
+node scripts/test-all-filters.js
+if [ $? -ne 0 ]; then
+  echo "❌ Tests failed — push blocked. Fix the failing tests first."
+  exit 1
+fi
+echo "✅ All tests passed — pushing."
