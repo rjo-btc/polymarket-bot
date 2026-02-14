@@ -184,15 +184,15 @@ function autoTune() {
     }
   }
 
-  // === STRATEGY DISABLE ===
-  for (const [strat, data] of Object.entries(by_strategy)) {
-    if (data.recommendation.startsWith('DISABLE') && params[strat]) {
-      if (params[strat].enabled !== false) {
-        params[strat].enabled = false;
-        log(`DISABLED strategy: ${strat} (win rate ${data.win_rate}% over ${data.total} trades)`);
-      }
-    }
-  }
+  // === STRATEGY DISABLE === (disabled during tuning phase — re-enable after 50+ trades)
+  // for (const [strat, data] of Object.entries(by_strategy)) {
+  //   if (data.recommendation.startsWith('DISABLE') && params[strat]) {
+  //     if (params[strat].enabled !== false) {
+  //       params[strat].enabled = false;
+  //       log(`DISABLED strategy: ${strat} (win rate ${data.win_rate}% over ${data.total} trades)`);
+  //     }
+  //   }
+  // }
 
   // === WIN OPTIMIZATION: Narrow toward winning entry window ===
   // If wins cluster in a tighter time range, narrow the window to the sweet spot
