@@ -35,12 +35,16 @@ const PHENOMENA = {
     guard(signal, ctx) {
       const state = ctx.phenomenaState.ema_lag_reversal || {};
       if (state.active_side && signal.side === state.active_side && state.consecutive_losses >= 2) {
-        // Escalating multiplier: 2 consec = 1.5x, 3 = 1.75x, 4+ = 2x
-        const multiplier = Math.min(2.0, 1 + state.consecutive_losses * 0.25);
+        // Time decay: every 5 min reduces effective severity by 1 level
+        const minSince = state.last_triggered ? (Date.now() - state.last_triggered) / 60000 : 0;
+        const decaySteps = Math.floor(minSince / 5);
+        const effectiveLosses = Math.max(0, state.consecutive_losses - decaySteps);
+        if (effectiveLosses < 2) return { block: false };
+        const multiplier = Math.min(2.0, 1 + effectiveLosses * 0.25);
         return {
           block: false,
           tighten: { min_slope_multiplier: multiplier, min_dist_multiplier: multiplier },
-          reason: `EMA_LAG_GUARD: ${state.consecutive_losses} consecutive ${signal.side.toUpperCase()} losses — requiring ${multiplier.toFixed(2)}x signal strength`,
+          reason: `EMA_LAG_GUARD: ${state.consecutive_losses} consec ${signal.side.toUpperCase()} losses (eff. ${effectiveLosses} after ${decaySteps > 0 ? decaySteps * 5 + 'min decay' : 'no decay'}) — ${multiplier.toFixed(2)}x signals`,
         };
       }
       return { block: false };
@@ -60,11 +64,16 @@ const PHENOMENA = {
     guard(signal, ctx) {
       const state = ctx.phenomenaState.side_streak_loss || {};
       if (state.losing_side === signal.side && state.streak >= 3) {
-        // Require extra strong signal: higher slope/dist thresholds
+        // Time decay: every 5 min reduces effective streak by 1
+        const minSince = state.last_triggered ? (Date.now() - state.last_triggered) / 60000 : 0;
+        const decaySteps = Math.floor(minSince / 5);
+        const effectiveStreak = Math.max(0, state.streak - decaySteps);
+        if (effectiveStreak < 3) return { block: false };
+        const multiplier = Math.min(2.0, 1 + (effectiveStreak - 2) * 0.25);
         return {
           block: false,
-          tighten: { min_slope_multiplier: 1.5, min_dist_multiplier: 1.5 },
-          reason: `SIDE_STREAK_WARN: ${signal.side.toUpperCase()} has ${state.streak} recent losses — requiring stronger signal`,
+          tighten: { min_slope_multiplier: multiplier, min_dist_multiplier: multiplier },
+          reason: `SIDE_STREAK_WARN: ${state.streak} ${signal.side.toUpperCase()} losses (eff. ${effectiveStreak} after ${decaySteps > 0 ? decaySteps * 5 + 'min decay' : 'no decay'}) — ${multiplier.toFixed(2)}x signals`,
         };
       }
       return { block: false };
@@ -86,10 +95,15 @@ const PHENOMENA = {
     guard(signal, ctx) {
       const state = ctx.phenomenaState.flat_market_chop || {};
       if (state.recent_chop_losses >= 2) {
+        // Time decay: every 5 min reduces effective count by 1
+        const minSince = state.last_triggered ? (Date.now() - state.last_triggered) / 60000 : 0;
+        const decaySteps = Math.floor(minSince / 5);
+        const effectiveChop = Math.max(0, state.recent_chop_losses - decaySteps);
+        if (effectiveChop < 2) return { block: false };
         return {
           block: false,
           tighten: { min_dist_multiplier: 2.0 },
-          reason: `CHOP_GUARD: ${state.recent_chop_losses} recent losses in flat markets — requiring 2x EMA distance`,
+          reason: `CHOP_GUARD: ${state.recent_chop_losses} chop losses (eff. ${effectiveChop} after ${decaySteps > 0 ? decaySteps * 5 + 'min decay' : 'no decay'}) — 2x EMA dist`,
         };
       }
       return { block: false };
@@ -106,10 +120,15 @@ const PHENOMENA = {
     guard(signal, ctx) {
       const state = ctx.phenomenaState.expensive_entry_trap || {};
       if (state.recent_expensive_losses >= 2) {
+        // Time decay: every 5 min reduces effective count by 1
+        const minSince = state.last_triggered ? (Date.now() - state.last_triggered) / 60000 : 0;
+        const decaySteps = Math.floor(minSince / 5);
+        const effectiveCount = Math.max(0, state.recent_expensive_losses - decaySteps);
+        if (effectiveCount < 2) return { block: false };
         return {
           block: false,
           tighten: { max_entry_override: 0.50 },
-          reason: `ENTRY_TRAP_GUARD: ${state.recent_expensive_losses} recent losses at >0.55 entry — temporarily capping at 0.50`,
+          reason: `ENTRY_TRAP_GUARD: ${state.recent_expensive_losses} expensive losses (eff. ${effectiveCount} after ${decaySteps > 0 ? decaySteps * 5 + 'min decay' : 'no decay'}) — temp cap 0.50`,
         };
       }
       return { block: false };
