@@ -191,7 +191,7 @@ async function traderLoop() {
                 rsi: emaState?.rsi ?? null,
                 min_ema_dist_bps: (tp.min_ema_dist_bps || 5),
                 min_slope_abs: (tp.min_slope_abs || 2),
-                max_entry_price: (tp.max_entry_price || 0.65),
+                max_entry_price: (tp.max_entry_price || 0.45),
               };
               const breakerResult = checkBreaker(breakerSignal);
               if (breakerResult.block) {
