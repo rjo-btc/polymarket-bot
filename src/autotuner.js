@@ -13,7 +13,7 @@ const defaults = {
   ema: {
     min_ema_dist_bps: 5,
     min_slope_abs: 2.0,
-    max_entry_price: 0.45,
+    max_entry_price: 0.4,   // HARD CAP: no entries above 40¢ (was 0.45)
     min_rr: 1.5,  // minimum R:R ratio — blocks coinflip trades
     min_entry_price: 0.0,
     entry_window_min: 150,
@@ -33,7 +33,7 @@ const defaults = {
   },
   session: {
     min_slope_abs: 2.0,
-    max_entry_price: 0.45,
+    max_entry_price: 0.4,   // HARD CAP: no entries above 40¢ (was 0.45)
     min_rr: 1.5,
     min_entry_price: 0.0,
     entry_window_min: 150,

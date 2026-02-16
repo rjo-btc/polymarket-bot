@@ -109,60 +109,14 @@ async function evaluate(market, btcPrice) {
   const absEmaDistBps = Math.abs(emaDistBps);
   const absPriceDistBps = Math.abs(distBps);  // price-to-EMA9 distance
 
-  // === EARLY ENTRY SIGNALS (240-270s before end) ===
-  // These fire before standard EMA alignment to get cheaper entries
-  if (isEarlyWindow && (p.early_signals_enabled ?? true)) {
-    const fastPrev2 = emaFast.length > 2 ? emaFast[emaFast.length - 3] : fastPrev;
-    const slopePrev = fastPrev - fastPrev2;
-    
-    // 1. MOMENTUM BURST: strong candle body suggesting continuation
-    const lastCandle = klines[klines.length - 1];
-    const body = lastCandle.close - lastCandle.open;
-    const bodyBps = Math.abs(body / lastCandle.open * 10000);
-    const range = lastCandle.high - lastCandle.low;
-    const bodyRatio = range > 0 ? Math.abs(body) / range : 0;
-    
-    if (bodyBps >= 5 && bodyRatio >= 0.7 && absPriceDistBps >= (p.min_ema_dist_bps || 5)) {
-      const emaDist = ((fast - slow) / slow) * 10000;
-      if (body > 0 && emaDist > -3 && currentRSI > 45 && currentRSI < (p.rsi_long_max ?? 75)) {
-        return { ...base, action: 'ENTER', side: 'up', 
-          reason: `EARLY MOMENTUM BURST UP: body ${bodyBps.toFixed(1)} bps (${(bodyRatio*100).toFixed(0)}% body), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
-      }
-      if (body < 0 && emaDist < 3 && currentRSI < 55) {
-        return { ...base, action: 'ENTER', side: 'down',
-          reason: `EARLY MOMENTUM BURST DOWN: body ${bodyBps.toFixed(1)} bps (${(bodyRatio*100).toFixed(0)}% body), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
-      }
-    }
-    
-    // 2. SLOPE ACCELERATION: EMA9 slope getting steeper each candle
-    const accel1 = Math.abs(slope) - Math.abs(slopePrev);
-    // Count consecutive accelerating candles for future analysis
-    let consecAccel = 0;
-    if (accel1 > 0) {
-      consecAccel = 1;
-      for (let j = 2; j <= 5; j++) {
-        const prev = emaFast.length > j + 1 ? emaFast[emaFast.length - j] : null;
-        const prevPrev = emaFast.length > j + 2 ? emaFast[emaFast.length - j - 1] : null;
-        if (!prev || !prevPrev) break;
-        const s1 = emaFast[emaFast.length - j + 1] - prev;
-        const s2 = prev - prevPrev;
-        if (Math.abs(s1) - Math.abs(s2) > 0) consecAccel++;
-        else break;
-      }
-    }
-    if (accel1 > 0 && slopeAbs >= 1 && absPriceDistBps >= (p.min_ema_dist_bps || 5)) {
-      if (slope > 0 && fast > slow && currentRSI > 45 && currentRSI < (p.rsi_long_max ?? 75)) {
-        return { ...base, action: 'ENTER', side: 'up',
-          reason: `EARLY SLOPE ACCEL UP: slope ${slope.toFixed(4)} accelerating (Δ${accel1.toFixed(4)}, ${consecAccel} consec), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
-      }
-      if (slope < 0 && fast < slow && currentRSI < 55) {
-        return { ...base, action: 'ENTER', side: 'down',
-          reason: `EARLY SLOPE ACCEL DOWN: slope ${slope.toFixed(4)} accelerating (Δ${accel1.toFixed(4)}, ${consecAccel} consec), RSI ${currentRSI.toFixed(1)}; ${paStr}` };
-      }
-    }
-    
-    // No early signal found — don't fall through to standard checks (too early for those)
-    return { ...base, action: 'SKIP', side: null, reason: `Early window (${secsToEnd}s) — no momentum burst or slope acceleration; ${paStr}` };
+  // === EARLY ENTRY SIGNALS REMOVED ===
+  // Early strategy removed due to poor performance (0% win rate, $2,501 losses)
+  // - Trades 47/48: $1,160 losses on "EARLY SLOPE ACCEL UP"  
+  // - Trade 43: $787 loss on "EARLY SLOPE ACCEL DOWN"
+  // - Trade 37: $588 loss on early acceleration
+  // Only standard entry window (150-240s) now allowed
+  if (isEarlyWindow) {
+    return { ...base, action: 'SKIP', side: null, reason: `Early window disabled (${secsToEnd}s) — early strategy removed due to losses; ${paStr}` };
   }
 
   // === MANDATORY PARAMETER VALIDATION ===
@@ -170,6 +124,17 @@ async function evaluate(market, btcPrice) {
   const HARD_MIN_PRICE_DIST = 3;  // price-to-EMA9 must be >= 3 bps
   const HARD_MIN_EMA_DIST = 3;    // EMA9-to-EMA200 must be >= 3 bps  
   const HARD_MIN_SLOPE = 2;       // absolute slope must be >= 2
+
+  // RSI EXTREME FILTER: Block overbought/oversold conditions (reversal risk)
+  const RSI_MIN = 30;  // Block oversold (RSI <30 = reversal up risk)
+  const RSI_MAX = 70;  // Block overbought (RSI >70 = reversal down risk)
+  
+  if (currentRSI < RSI_MIN) {
+    return { ...base, action: 'SKIP', side: null, reason: `RSI FILTER: oversold ${currentRSI.toFixed(1)} < ${RSI_MIN} (reversal risk); ${paStr}` };
+  }
+  if (currentRSI > RSI_MAX) {
+    return { ...base, action: 'SKIP', side: null, reason: `RSI FILTER: overbought ${currentRSI.toFixed(1)} > ${RSI_MAX} (reversal risk); ${paStr}` };
+  }
 
   // Check hard minimums FIRST — these override everything else
   if (absPriceDistBps < HARD_MIN_PRICE_DIST) {
