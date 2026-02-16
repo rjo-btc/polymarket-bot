@@ -7,8 +7,8 @@
  * 
  * Tiers:
  *   1 (Max Conviction)  — score >= 70 → 100% of Kelly size
- *   2 (Standard)        — score 40-69 → 75% of Kelly size
- *   3 (Low Conviction)  — score < 40  → 50% of Kelly size
+ *   2 (Standard)        — score 40-69 → 85% of Kelly size (was 75%)
+ *   3 (Low Conviction)  — score < 40  → 70% of Kelly size (was 50%)
  * 
  * Activated only after Kelly threshold (50 trades) is met.
  */
@@ -17,8 +17,8 @@ const { getAllPositions } = require('./db');
 
 const TIER_MULTIPLIERS = {
   1: 1.0,    // Max conviction — full Kelly
-  2: 0.75,   // Standard — 3/4 Kelly
-  3: 0.50,   // Low conviction — half Kelly
+  2: 0.85,   // Standard — 85% Kelly (was 75%)
+  3: 0.70,   // Low conviction — 70% Kelly (was 50%)
 };
 
 const TIER_THRESHOLDS = {
