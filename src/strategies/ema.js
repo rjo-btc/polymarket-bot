@@ -125,16 +125,9 @@ async function evaluate(market, btcPrice) {
   const HARD_MIN_EMA_DIST = 3;    // EMA9-to-EMA200 must be >= 3 bps  
   const HARD_MIN_SLOPE = 2;       // absolute slope must be >= 2
 
-  // RSI EXTREME FILTER: Block overbought/oversold conditions (reversal risk)
-  const RSI_MIN = 30;  // Block oversold (RSI <30 = reversal up risk)
-  const RSI_MAX = 70;  // Block overbought (RSI >70 = reversal down risk)
-  
-  if (currentRSI < RSI_MIN) {
-    return { ...base, action: 'SKIP', side: null, reason: `RSI FILTER: oversold ${currentRSI.toFixed(1)} < ${RSI_MIN} (reversal risk); ${paStr}` };
-  }
-  if (currentRSI > RSI_MAX) {
-    return { ...base, action: 'SKIP', side: null, reason: `RSI FILTER: overbought ${currentRSI.toFixed(1)} > ${RSI_MAX} (reversal risk); ${paStr}` };
-  }
+  // RSI FILTERS: Direction-specific zones based on winning patterns
+  // DOWN trades: RSI 20-45 (captures bearish momentum + oversold bounces)
+  // UP trades: RSI 60+ (requires strong bullish momentum)
 
   // Check hard minimums FIRST — these override everything else
   if (absPriceDistBps < HARD_MIN_PRICE_DIST) {
@@ -158,10 +151,11 @@ async function evaluate(market, btcPrice) {
   const SHORT_DEAD_SLOPE_LO = p.short_dead_slope_lo ?? 3;
   const SHORT_DEAD_SLOPE_HI = p.short_dead_slope_hi ?? 6;
 
-  // RSI confirmation thresholds
-  const RSI_LONG_MIN = p.rsi_long_min ?? 50;
-  const RSI_LONG_MAX = p.rsi_long_max ?? 75;  // overbought cap — RSI > 75 = reversal risk
-  const RSI_SHORT_MAX = p.rsi_short_max ?? 50;
+  // RSI confirmation thresholds — OPTIMIZED based on winner analysis
+  const RSI_LONG_MIN = p.rsi_long_min ?? 60;   // UP needs momentum (all winners had RSI 60+)
+  const RSI_LONG_MAX = p.rsi_long_max ?? 75;   // keep upper bound for safety
+  const RSI_SHORT_MIN = p.rsi_short_min ?? 20; // DOWN allows oversold bounces (winners at RSI 21+)  
+  const RSI_SHORT_MAX = p.rsi_short_max ?? 45; // DOWN sweet spot caps at RSI 45
 
   // LONG: price > EMAfast > EMAslow, strong signal required + RSI confirmation
   if (price > fast && fast > slow && slope > 0) {
@@ -171,8 +165,8 @@ async function evaluate(market, btcPrice) {
     if (absEmaDistBps < LONG_MIN_DIST) reasons.push(`EMA dist ${absEmaDistBps.toFixed(1)} < ${LONG_MIN_DIST} bps (long requires strong trend)`);
     if (slopeAbs < LONG_MIN_SLOPE) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${LONG_MIN_SLOPE} (long requires strong momentum)`);
     
-    // RSI confirmation
-    if (currentRSI < RSI_LONG_MIN) reasons.push(`RSI ${currentRSI.toFixed(1)} < ${RSI_LONG_MIN} (no momentum confirmation)`);
+    // RSI confirmation — UP requires momentum zone
+    if (currentRSI < RSI_LONG_MIN) reasons.push(`RSI ${currentRSI.toFixed(1)} < ${RSI_LONG_MIN} (UP needs momentum — all winners had RSI 60+)`);
     if (currentRSI > RSI_LONG_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_LONG_MAX} (overbought — reversal risk)`);
     
     if (reasons.length === 0) {
@@ -200,7 +194,10 @@ async function evaluate(market, btcPrice) {
     // Additional base filters
     if (absEmaDistBps < (p.min_ema_dist_bps ?? 3)) reasons.push(`EMA dist ${absEmaDistBps.toFixed(1)} < ${p.min_ema_dist_bps ?? 3} bps minimum`);
     if (slopeAbs < (p.min_slope_abs ?? 2)) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${p.min_slope_abs ?? 2} minimum`);
-    if (currentRSI > RSI_SHORT_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_SHORT_MAX} (no bearish confirmation)`);
+    
+    // RSI confirmation — DOWN requires bearish momentum zone (20-45)
+    if (currentRSI < RSI_SHORT_MIN) reasons.push(`RSI ${currentRSI.toFixed(1)} < ${RSI_SHORT_MIN} (too oversold — extreme reversal risk)`);
+    if (currentRSI > RSI_SHORT_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_SHORT_MAX} (DOWN winners cluster RSI 20-45)`);
     
     if (reasons.length === 0) {
       return {
