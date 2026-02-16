@@ -40,6 +40,15 @@ const PHENOMENA = {
         const decaySteps = Math.floor(minSince / 5);
         const effectiveLosses = Math.max(0, state.consecutive_losses - decaySteps);
         if (effectiveLosses < 2) return { block: false };
+        
+        // HARD BLOCK if fresh (< 5 min) AND 3+ losses
+        if (minSince < 5 && state.consecutive_losses >= 3) {
+          return {
+            block: true,
+            reason: `EMA_LAG_BLOCK: ${state.consecutive_losses} consecutive ${signal.side.toUpperCase()} losses in < 5min — hard block until decay`,
+          };
+        }
+        
         const multiplier = Math.min(2.0, 1 + effectiveLosses * 0.25);
         return {
           block: false,
@@ -69,6 +78,15 @@ const PHENOMENA = {
         const decaySteps = Math.floor(minSince / 5);
         const effectiveStreak = Math.max(0, state.streak - decaySteps);
         if (effectiveStreak < 3) return { block: false };
+        
+        // HARD BLOCK if fresh (< 10 min) AND 4+ losses
+        if (minSince < 10 && state.streak >= 4) {
+          return {
+            block: true,
+            reason: `SIDE_STREAK_BLOCK: ${state.streak} ${signal.side.toUpperCase()} losses in last 8 trades — hard block until decay`,
+          };
+        }
+        
         const multiplier = Math.min(2.0, 1 + (effectiveStreak - 2) * 0.25);
         return {
           block: false,
@@ -317,15 +335,15 @@ function onTradeResolved(trade) {
 }
 
 // Hard block config
-const HARD_BLOCK_AFTER = 4;          // consecutive same-side losses before hard block
-const HARD_BLOCK_DURATION_MS = 15 * 60 * 1000;  // 15 min hard block
+const HARD_BLOCK_AFTER = 2;          // consecutive same-side losses before hard block (reduced from 4)
+const HARD_BLOCK_DURATION_MS = 10 * 60 * 1000;  // 10 min hard block (reduced from 15)
 
 // Called before entering a trade — returns combined guard result
 function checkGuards(signal) {
   const ctx = { phenomenaState };
   const results = [];
 
-  // === HARD BLOCK: ≥4 consecutive same-side losses → block that side for 15 min ===
+  // === HARD BLOCK: ≥2 consecutive same-side losses → block that side for 10 min ===
   const ds = phenomenaState.directional_spam || {};
   if (ds.streak_side === signal.side && (ds.loss_streak || 0) >= HARD_BLOCK_AFTER) {
     const lastAt = ds.last_trade_at || 0;
@@ -338,6 +356,63 @@ function checkGuards(signal) {
         phenomena: [{ key: 'hard_block', block: true }],
       };
     }
+  }
+
+  // === MULTI-PATTERN BLOCK: Multiple phenomena triggered = emergency stop ===
+  const activePatterns = [];
+  
+  // Check EMA lag reversal
+  const emaLag = phenomenaState.ema_lag_reversal || {};
+  if (emaLag.active_side === signal.side && (emaLag.consecutive_losses || 0) >= 2) {
+    const minSince = emaLag.last_triggered ? (Date.now() - emaLag.last_triggered) / 60000 : 999;
+    if (minSince < 15) { // active within last 15 min
+      activePatterns.push('EMA_LAG');
+    }
+  }
+
+  // Check side streak loss  
+  const sideStreak = phenomenaState.side_streak_loss || {};
+  if (sideStreak.losing_side === signal.side && (sideStreak.streak || 0) >= 3) {
+    const minSince = sideStreak.last_triggered ? (Date.now() - sideStreak.last_triggered) / 60000 : 999;
+    if (minSince < 15) { // active within last 15 min
+      activePatterns.push('SIDE_STREAK');
+    }
+  }
+
+  // Check flat market chop
+  const chop = phenomenaState.flat_market_chop || {};
+  if ((chop.recent_chop_losses || 0) >= 1) {
+    const minSince = chop.last_triggered ? (Date.now() - chop.last_triggered) / 60000 : 999;
+    if (minSince < 15) { // active within last 15 min
+      activePatterns.push('FLAT_CHOP');
+    }
+  }
+
+  // Check low EMA distance (from signal itself)
+  const dist = signal.edist ?? signal.dist ?? 999;
+  const minDist = signal.min_ema_dist_bps || 5;
+  if (dist < minDist * 2) { // less than 2x minimum
+    activePatterns.push('LOW_DIST');
+  }
+
+  // EMERGENCY STOP: 3+ patterns = hard block for 5 minutes
+  if (activePatterns.length >= 3) {
+    return {
+      block: true, 
+      reason: `EMERGENCY STOP: ${activePatterns.length} failure patterns active (${activePatterns.join(', ')}) — all trades blocked for 5 min`,
+      phenomena: [{ key: 'multi_pattern_block', block: true }],
+    };
+  }
+
+  // === CRITICAL EMA DISTANCE BLOCK: < 40% of minimum requirement ===
+  const dist = signal.edist ?? signal.dist ?? 999;
+  const minDist = signal.min_ema_dist_bps || 5;
+  if (dist < minDist * 0.4) { // less than 40% of minimum (e.g., 6.1 < 5*8 = severely low)
+    return {
+      block: true,
+      reason: `CRITICAL_DIST_BLOCK: EMA distance ${dist.toFixed(1)} bps < critical threshold ${(minDist * 0.4).toFixed(1)} bps — no signal reliability`,
+      phenomena: [{ key: 'critical_dist_block', block: true }],
+    };
   }
 
   // Decay cooldowns for ema_lag_reversal

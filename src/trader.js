@@ -237,7 +237,19 @@ async function traderLoop() {
               }
 
               // Check phenomena guards before entering
-              const guardResult = checkGuards({ side: decision.side, strategy: decision.strategy, entry_price: entryPrice });
+              const guardSignal = {
+                side: decision.side, 
+                strategy: decision.strategy, 
+                entry_price: entryPrice,
+                dist: emaState?.ema_dist_bps ?? null,
+                edist: emaState?.ema_dist_bps ?? null,
+                slope: emaState?.slope ?? null,
+                rsi: emaState?.rsi ?? null,
+                min_ema_dist_bps: (tp.min_ema_dist_bps || 5),
+                min_slope_abs: (tp.min_slope_abs || 2),
+                max_entry_price: dynamicMaxPrice,
+              };
+              const guardResult = checkGuards(guardSignal);
               if (guardResult.block) {
                 console.log(`[Trader] TREND GUARDRAIL BLOCKED: ${guardResult.reason}`);
                 insertDecision.run({
