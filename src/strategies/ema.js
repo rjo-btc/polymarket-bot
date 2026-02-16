@@ -117,7 +117,7 @@ async function evaluate(market, btcPrice) {
   // === ACTION ITEMS 1-4: ENHANCED MANDATORY VALIDATION ===
   // Updated based on last 10 losses analysis: counter-trend trading patterns identified
   const HARD_MIN_PRICE_DIST = 3;  // price-to-EMA9 must be >= 3 bps
-  const HARD_MIN_EMA_DIST = p.min_ema_dist_bps ?? 15;  // ACTION ITEM 2: Enhanced from 40→15 (losers averaged 9.3)
+  const HARD_MIN_EMA_DIST = 15;  // ACTION ITEM 2: Enhanced from 40→15 (losers averaged 9.3) - FORCED VALUE
   const HARD_MIN_SLOPE = 10;      // absolute slope must be >= 10 (winners averaged 14.3 vs 11.5)
 
   // ACTION ITEM 1: RSI FILTER ENHANCEMENT - Block counter-trend trades
