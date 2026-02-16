@@ -389,9 +389,9 @@ function checkGuards(signal) {
   }
 
   // Check low EMA distance (from signal itself)
-  const dist = signal.edist ?? signal.dist ?? 999;
-  const minDist = signal.min_ema_dist_bps || 5;
-  if (dist < minDist * 2) { // less than 2x minimum
+  const signalDist = signal.edist ?? signal.dist ?? 999;
+  const signalMinDist = signal.min_ema_dist_bps || 5;
+  if (signalDist < signalMinDist * 2) { // less than 2x minimum
     activePatterns.push('LOW_DIST');
   }
 
@@ -404,13 +404,11 @@ function checkGuards(signal) {
     };
   }
 
-  // === CRITICAL EMA DISTANCE BLOCK: < 40% of minimum requirement ===
-  const dist = signal.edist ?? signal.dist ?? 999;
-  const minDist = signal.min_ema_dist_bps || 5;
-  if (dist < minDist * 0.4) { // less than 40% of minimum (e.g., 6.1 < 5*8 = severely low)
+  // === CRITICAL EMA DISTANCE BLOCK: < minimum requirement (tuner sets this higher) ===
+  if (signalDist < signalMinDist) { // less than minimum requirement
     return {
       block: true,
-      reason: `CRITICAL_DIST_BLOCK: EMA distance ${dist.toFixed(1)} bps < critical threshold ${(minDist * 0.4).toFixed(1)} bps — no signal reliability`,
+      reason: `CRITICAL_DIST_BLOCK: EMA distance ${signalDist.toFixed(1)} bps < minimum ${signalMinDist.toFixed(1)} bps — insufficient signal quality`,
       phenomena: [{ key: 'critical_dist_block', block: true }],
     };
   }
