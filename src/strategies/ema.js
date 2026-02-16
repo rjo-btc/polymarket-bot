@@ -152,6 +152,18 @@ async function evaluate(market, btcPrice) {
   const RSI_SHORT_MIN = p.rsi_short_min ?? 20; // DOWN allows oversold bounces (winners at RSI 21+)  
   const RSI_SHORT_MAX = p.rsi_short_max ?? 45; // DOWN sweet spot caps at RSI 45
 
+  // === DYNAMIC ENTRY PRICE CAPS ===
+  // Based on signal strength - stronger signals get higher entry price allowances
+  function getDynamicMaxEntryPrice(emaDistBps, slopeAbs) {
+    if (emaDistBps >= 50 && slopeAbs >= 15) {
+      return 0.60; // Ultra-strong: 50+ BPS EMA + 15+ slope
+    } else if (emaDistBps >= 40 && slopeAbs >= 10) {
+      return 0.40; // Strong: 40+ BPS EMA + 10+ slope  
+    } else {
+      return 0.30; // Minimum signals: baseline cap
+    }
+  }
+
   // LONG: price > EMAfast > EMAslow, strong signal required + RSI confirmation
   if (price > fast && fast > slow && slope > 0) {
     const reasons = [];
@@ -165,11 +177,15 @@ async function evaluate(market, btcPrice) {
     if (currentRSI > RSI_LONG_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_LONG_MAX} (overbought — reversal risk)`);
     
     if (reasons.length === 0) {
+      const dynamicMaxPrice = getDynamicMaxEntryPrice(absEmaDistBps, slopeAbs);
+      const signalTier = dynamicMaxPrice === 0.60 ? 'ULTRA' : dynamicMaxPrice === 0.40 ? 'STRONG' : 'MINIMUM';
       return {
         ...base,
         action: 'ENTER',
         side: 'up',
         reason: `LONG signal: price ${price.toFixed(2)} > EMA${fastPeriod} ${fast.toFixed(2)} > EMA${slowPeriod} ${slow.toFixed(2)}; RSI ${currentRSI.toFixed(1)}; ${paStr}`,
+        dynamic_max_entry_price: dynamicMaxPrice,
+        signal_tier: signalTier,
       };
     }
     return { ...base, action: 'SKIP', side: null, reason: `LONG FILTERED: ${reasons.join(', ')}; ${paStr}` };
@@ -195,11 +211,15 @@ async function evaluate(market, btcPrice) {
     if (currentRSI > RSI_SHORT_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_SHORT_MAX} (DOWN winners cluster RSI 20-45)`);
     
     if (reasons.length === 0) {
+      const dynamicMaxPrice = getDynamicMaxEntryPrice(absEmaDistBps, slopeAbs);
+      const signalTier = dynamicMaxPrice === 0.60 ? 'ULTRA' : dynamicMaxPrice === 0.40 ? 'STRONG' : 'MINIMUM';
       return {
         ...base,
         action: 'ENTER',
         side: 'down',
         reason: `SHORT signal: price ${price.toFixed(2)} < EMA${fastPeriod} ${fast.toFixed(2)} < EMA${slowPeriod} ${slow.toFixed(2)}; RSI ${currentRSI.toFixed(1)}; ${paStr}`,
+        dynamic_max_entry_price: dynamicMaxPrice,
+        signal_tier: signalTier,
       };
     }
     return { ...base, action: 'SKIP', side: null, reason: `SHORT FILTERED: ${reasons.join(', ')}; ${paStr}` };

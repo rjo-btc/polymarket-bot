@@ -142,14 +142,28 @@ async function traderLoop() {
               // Compute spread from both sides
               const spread = prices.up && prices.down ? Math.abs(1 - prices.up - prices.down) : null;
 
-              // Apply entry price filter from auto-tuner
+              // Apply dynamic entry price filter based on signal strength
               const tp = tunerParams[decision.strategy] || {};
               if (tp.min_entry_price && entryPrice < tp.min_entry_price) {
                 console.log(`[Trader] ${decision.strategy.toUpperCase()} FILTERED: entry price ${entryPrice.toFixed(3)} < min ${tp.min_entry_price}`);
                 continue;
               }
-              if (tp.max_entry_price && tp.max_entry_price < 1.0 && entryPrice > tp.max_entry_price) {
-                console.log(`[Trader] ${decision.strategy.toUpperCase()} FILTERED: entry price ${entryPrice.toFixed(3)} > max ${tp.max_entry_price}`);
+              
+              // Use dynamic max entry price based on signal strength
+              const dynamicMaxPrice = decision.dynamic_max_entry_price || tp.max_entry_price || 0.60;
+              const signalTier = decision.signal_tier || 'UNKNOWN';
+              if (entryPrice > dynamicMaxPrice) {
+                console.log(`[Trader] ${decision.strategy.toUpperCase()} FILTERED: entry price ${entryPrice.toFixed(3)} > ${signalTier} tier max ${dynamicMaxPrice.toFixed(2)}`);
+                insertDecision.run({
+                  strategy: decision.strategy,
+                  market_slug: market.market_slug,
+                  market_end_at: market.market_end_at,
+                  last_checked_at: new Date().toISOString(),
+                  seconds_to_end: Math.floor((market.endMs - Date.now()) / 1000),
+                  action: 'SKIP',
+                  side: decision.side,
+                  reason: `Entry price ${entryPrice.toFixed(3)} > ${signalTier} tier cap ${dynamicMaxPrice.toFixed(2)} (signal strength insufficient)`,
+                });
                 continue;
               }
 
@@ -191,7 +205,7 @@ async function traderLoop() {
                 rsi: emaState?.rsi ?? null,
                 min_ema_dist_bps: (tp.min_ema_dist_bps || 5),
                 min_slope_abs: (tp.min_slope_abs || 2),
-                max_entry_price: (tp.max_entry_price || 0.45),
+                max_entry_price: dynamicMaxPrice, // Use dynamic max price for circuit breaker
               };
               const breakerResult = checkBreaker(breakerSignal);
               if (breakerResult.block) {
@@ -407,7 +421,8 @@ async function traderLoop() {
               console.log(`[Trader] ${decision.strategy.toUpperCase()} ENTERED ${decision.side.toUpperCase()} on ${market.market_slug}`);
               const tierInfo = kellyActive ? ` | T${confidence.tier} (${confidence.score})` : '';
               const liqInfo = liqResult.capped ? ` | 🔒 LIQ CAP (book ~${liqResult.meta.bookDepth})` : '';
-              notify(`📈 ENTERED ${decision.side.toUpperCase()} — $${stakeUsd.toFixed(2)} via ${decision.strategy} @ ${entryPrice.toFixed(3)} | BTC $${btc.price.toFixed(2)} | ${secsToEnd}s to end${tierInfo}${liqInfo}`);
+              const signalInfo = signalTier ? ` | ${signalTier} signal (max $${dynamicMaxPrice.toFixed(2)})` : '';
+              notify(`📈 ENTERED ${decision.side.toUpperCase()} — $${stakeUsd.toFixed(2)} via ${decision.strategy} @ ${entryPrice.toFixed(3)} | BTC $${btc.price.toFixed(2)} | ${secsToEnd}s to end${tierInfo}${liqInfo}${signalInfo}`);
             }
           }
         }

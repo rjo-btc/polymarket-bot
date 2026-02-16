@@ -90,17 +90,50 @@ async function evaluate(market, btcPrice) {
 
   const paStr = `PA[session=${session.active ? session.name : 'off'},est=${estTime},close1m=${close1m.toFixed(2)},prevClose1m=${prevClose1m.toFixed(2)},vol1mTicks=${vol1mTicks.toFixed(0)},vol5mAvgTicks=${vol5mAvgTicks.toFixed(0)},atr3=${atr3.toFixed(2)},atr8=${atr8.toFixed(2)},confirmUp=${confirmUp},confirmDown=${confirmDown},volExpand=${volExpand},atrExpand=${atrExpand},atrContract=${atrContract}]`;
 
+  // === DYNAMIC ENTRY PRICE CAPS ===
+  // Session strategy uses volume and ATR expansion as signal strength indicators
+  function getDynamicMaxEntryPriceSession(volExpand, atrExpand, atr3, atr8) {
+    const volRatio = vol1mTicks / vol5mAvgTicks;
+    const atrRatio = atr3 / atr8;
+    
+    if (volRatio >= 1.5 && atrRatio >= 1.3) {
+      return 0.60; // Ultra-strong: high volume expansion + strong ATR expansion
+    } else if (volRatio >= 1.2 && atrRatio >= 1.1) {
+      return 0.40; // Strong: moderate expansion on both metrics
+    } else {
+      return 0.30; // Minimum signals: baseline cap
+    }
+  }
+
   if (!session.active) {
     return { ...base, action: 'SKIP', side: null, reason: `No session edge active; ${paStr}` };
   }
 
   // Need volume expansion + ATR expansion + price confirmation
   if (volExpand && atrExpand && confirmUp) {
-    return { ...base, action: 'ENTER', side: 'up', reason: `Session ${session.name} LONG: vol expand + ATR expand + confirm up; ${paStr}` };
+    const dynamicMaxPrice = getDynamicMaxEntryPriceSession(volExpand, atrExpand, atr3, atr8);
+    const signalTier = dynamicMaxPrice === 0.60 ? 'ULTRA' : dynamicMaxPrice === 0.40 ? 'STRONG' : 'MINIMUM';
+    return { 
+      ...base, 
+      action: 'ENTER', 
+      side: 'up', 
+      reason: `Session ${session.name} LONG: vol expand + ATR expand + confirm up; ${paStr}`,
+      dynamic_max_entry_price: dynamicMaxPrice,
+      signal_tier: signalTier,
+    };
   }
 
   if (volExpand && atrExpand && confirmDown) {
-    return { ...base, action: 'ENTER', side: 'down', reason: `Session ${session.name} SHORT: vol expand + ATR expand + confirm down; ${paStr}` };
+    const dynamicMaxPrice = getDynamicMaxEntryPriceSession(volExpand, atrExpand, atr3, atr8);
+    const signalTier = dynamicMaxPrice === 0.60 ? 'ULTRA' : dynamicMaxPrice === 0.40 ? 'STRONG' : 'MINIMUM';
+    return { 
+      ...base, 
+      action: 'ENTER', 
+      side: 'down', 
+      reason: `Session ${session.name} SHORT: vol expand + ATR expand + confirm down; ${paStr}`,
+      dynamic_max_entry_price: dynamicMaxPrice,
+      signal_tier: signalTier,
+    };
   }
 
   return { ...base, action: 'SKIP', side: null, reason: `Session ${session.name} active but no PA confirmation; ${paStr}` };
