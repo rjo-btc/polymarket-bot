@@ -115,25 +115,36 @@ function scoreSetup(setup) {
   let totalWeight = 0;
 
   // === Entry Price Score (weight: 35) ===
-  // Best wins come from specific price ranges — score by proximity to win sweet spot
+  // Reward cheap entries with good R:R potential — early entries are our edge
   const weight_price = 35;
-  if (setup.entry_price != null && profile.entry_price.p50 != null) {
-    const ideal = profile.entry_price.p50;
-    const range = Math.max(0.15, (profile.entry_price.p75 || 0.65) - (profile.entry_price.p25 || 0.3));
-    const dist = Math.abs(setup.entry_price - ideal);
-    const priceScore = Math.max(0, 100 - (dist / range) * 100);
+  if (setup.entry_price != null) {
+    // Score based on R:R potential, not historical proximity
+    // Cheaper entries = better R:R = higher scores
+    const rrRatio = (1 - setup.entry_price) / setup.entry_price;
     
-    // Penalty if entry price is in the loss zone
-    if (profile.loss_entry_price.p50 != null) {
-      const lossProximity = Math.abs(setup.entry_price - profile.loss_entry_price.p50);
-      const winProximity = dist;
-      // If closer to loss profile than win profile, penalize
-      if (lossProximity < winProximity) {
-        breakdown.price_penalty = 'closer to loss profile';
-      }
+    let priceScore;
+    if (setup.entry_price <= 0.2) {
+      // Ultra cheap (≤20¢) — excellent R:R, score 90-100
+      priceScore = 90 + (0.2 - setup.entry_price) * 50;
+    } else if (setup.entry_price <= 0.35) {
+      // Good cheap (20-35¢) — solid R:R, score 75-90  
+      priceScore = 75 + (0.35 - setup.entry_price) / 0.15 * 15;
+    } else if (setup.entry_price <= 0.5) {
+      // Fair (35-50¢) — reasonable R:R, score 60-75
+      priceScore = 60 + (0.5 - setup.entry_price) / 0.15 * 15;
+    } else if (setup.entry_price <= 0.65) {
+      // Expensive (50-65¢) — poor R:R, score 25-60
+      priceScore = 25 + (0.65 - setup.entry_price) / 0.15 * 35;
+    } else {
+      // Overpriced (>65¢) — terrible R:R, score 0-25
+      priceScore = Math.max(0, 25 - (setup.entry_price - 0.65) * 100);
     }
     
-    breakdown.entry_price = { score: Math.round(priceScore), ideal: Math.round(ideal * 1000) / 1000 };
+    breakdown.entry_price = { 
+      score: Math.round(Math.min(100, priceScore)), 
+      rr_ratio: Math.round(rrRatio * 100) / 100,
+      rationale: 'cheap_entries_rewarded'
+    };
     totalScore += priceScore * weight_price;
     totalWeight += weight_price;
   }
