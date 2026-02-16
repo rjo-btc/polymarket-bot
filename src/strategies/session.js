@@ -1,4 +1,24 @@
 const { fetchKlines } = require('../btcPrice');
+const { params } = require('../autotuner');
+
+function calcRSI(closes, period) {
+  const rsi = new Array(closes.length).fill(50);
+  if (closes.length < period + 1) return rsi;
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d > 0) avgGain += d; else avgLoss += Math.abs(d);
+  }
+  avgGain /= period; avgLoss /= period;
+  rsi[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + (d > 0 ? d : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (d < 0 ? Math.abs(d) : 0)) / period;
+    rsi[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+  }
+  return rsi;
+}
 
 // Session edges in ET (Eastern Time)
 const SESSION_EDGES = [
@@ -71,6 +91,11 @@ async function evaluate(market, btcPrice) {
     return { ...base, action: 'SKIP', side: null, reason: `Not enough candles; PA[session=${session.active ? session.name : 'off'},est=${estTime}]` };
   }
 
+  const p = params.session;
+  const closes = klines.map(k => k.close);
+  const rsi = calcRSI(closes, 14);
+  const currentRSI = rsi[rsi.length - 1];
+
   const close1m = klines[klines.length - 1].close;
   const prevClose1m = klines[klines.length - 2].close;
   const vol1mTicks = klines[klines.length - 1].volume;
@@ -82,6 +107,10 @@ async function evaluate(market, btcPrice) {
   const atr3 = calcATR(klines, 3);
   const atr8 = calcATR(klines, 8);
 
+  // ACTION ITEMS 1: RSI Filter Enhancement
+  const RSI_DOWN_MAX = p.rsi_down_max ?? 35;
+  const RSI_UP_MIN = p.rsi_up_min ?? 65;
+
   const confirmUp = close1m > prevClose1m;
   const confirmDown = close1m < prevClose1m;
   const volExpand = vol1mTicks > vol5mAvgTicks * 1.2;
@@ -90,18 +119,19 @@ async function evaluate(market, btcPrice) {
 
   const paStr = `PA[session=${session.active ? session.name : 'off'},est=${estTime},close1m=${close1m.toFixed(2)},prevClose1m=${prevClose1m.toFixed(2)},vol1mTicks=${vol1mTicks.toFixed(0)},vol5mAvgTicks=${vol5mAvgTicks.toFixed(0)},atr3=${atr3.toFixed(2)},atr8=${atr8.toFixed(2)},confirmUp=${confirmUp},confirmDown=${confirmDown},volExpand=${volExpand},atrExpand=${atrExpand},atrContract=${atrContract}]`;
 
-  // === DYNAMIC ENTRY PRICE CAPS ===
-  // Session strategy uses volume and ATR expansion as signal strength indicators
+  // === ACTION ITEM 3: TIGHTER ENTRY PRICE CAPS ===
+  // Session strategy enhanced with tighter caps based on loss analysis
   function getDynamicMaxEntryPriceSession(volExpand, atrExpand, atr3, atr8) {
     const volRatio = vol1mTicks / vol5mAvgTicks;
     const atrRatio = atr3 / atr8;
     
+    // ACTION ITEM 3: Reduced caps - losers had expensive entries averaging 0.361
     if (volRatio >= 1.5 && atrRatio >= 1.3) {
-      return 0.60; // Ultra-strong: high volume expansion + strong ATR expansion
+      return 0.30; // Ultra-strong: high volume + ATR expansion (was 0.60)
     } else if (volRatio >= 1.2 && atrRatio >= 1.1) {
-      return 0.40; // Strong: moderate expansion on both metrics
+      return 0.25; // Strong: moderate expansion (was 0.40)
     } else {
-      return 0.30; // Minimum signals: baseline cap
+      return 0.20; // Minimum signals: tight cap (was 0.30)
     }
   }
 
@@ -109,28 +139,48 @@ async function evaluate(market, btcPrice) {
     return { ...base, action: 'SKIP', side: null, reason: `No session edge active; ${paStr}` };
   }
 
-  // Need volume expansion + ATR expansion + price confirmation
+  // Need volume expansion + ATR expansion + price confirmation + RSI filter
   if (volExpand && atrExpand && confirmUp) {
+    // ACTION ITEM 1: RSI Filter - Block UP trades when RSI >65 (overbought → drop)
+    if (currentRSI > RSI_UP_MIN) {
+      return { 
+        ...base, 
+        action: 'SKIP', 
+        side: null, 
+        reason: `Session ${session.name} UP BLOCKED: RSI ${currentRSI.toFixed(1)} > ${RSI_UP_MIN} (overbought → drop risk); ${paStr}` 
+      };
+    }
+    
     const dynamicMaxPrice = getDynamicMaxEntryPriceSession(volExpand, atrExpand, atr3, atr8);
-    const signalTier = dynamicMaxPrice === 0.60 ? 'ULTRA' : dynamicMaxPrice === 0.40 ? 'STRONG' : 'MINIMUM';
+    const signalTier = dynamicMaxPrice === 0.30 ? 'ULTRA' : dynamicMaxPrice === 0.25 ? 'STRONG' : 'MINIMUM';
     return { 
       ...base, 
       action: 'ENTER', 
       side: 'up', 
-      reason: `Session ${session.name} LONG: vol expand + ATR expand + confirm up; ${paStr}`,
+      reason: `Session ${session.name} LONG: vol expand + ATR expand + confirm up + RSI ${currentRSI.toFixed(1)}; ${paStr}`,
       dynamic_max_entry_price: dynamicMaxPrice,
       signal_tier: signalTier,
     };
   }
 
   if (volExpand && atrExpand && confirmDown) {
+    // ACTION ITEM 1: RSI Filter - Block DOWN trades when RSI <35 (oversold → bounce)
+    if (currentRSI < RSI_DOWN_MAX) {
+      return { 
+        ...base, 
+        action: 'SKIP', 
+        side: null, 
+        reason: `Session ${session.name} DOWN BLOCKED: RSI ${currentRSI.toFixed(1)} < ${RSI_DOWN_MAX} (oversold → bounce risk); ${paStr}` 
+      };
+    }
+    
     const dynamicMaxPrice = getDynamicMaxEntryPriceSession(volExpand, atrExpand, atr3, atr8);
-    const signalTier = dynamicMaxPrice === 0.60 ? 'ULTRA' : dynamicMaxPrice === 0.40 ? 'STRONG' : 'MINIMUM';
+    const signalTier = dynamicMaxPrice === 0.30 ? 'ULTRA' : dynamicMaxPrice === 0.25 ? 'STRONG' : 'MINIMUM';
     return { 
       ...base, 
       action: 'ENTER', 
       side: 'down', 
-      reason: `Session ${session.name} SHORT: vol expand + ATR expand + confirm down; ${paStr}`,
+      reason: `Session ${session.name} SHORT: vol expand + ATR expand + confirm down + RSI ${currentRSI.toFixed(1)}; ${paStr}`,
       dynamic_max_entry_price: dynamicMaxPrice,
       signal_tier: signalTier,
     };

@@ -11,9 +11,11 @@ const LOG_KEY = 'autotuner_log';
  */
 const defaults = {
   ema: {
-    min_ema_dist_bps: 40,   // OPTIMIZED: winners averaged 53.7 vs losers 38.3 BPS
+    // ACTION ITEM 2: EMA Distance Threshold - Increase minimum (losers averaged 9.3 bps)
+    min_ema_dist_bps: 15,   // ENHANCED: from 40 → 15 bps minimum for cleaner signals
     min_slope_abs: 10.0,    // OPTIMIZED: winners averaged 14.3 vs losers 11.5 slope
-    max_entry_price: 0.6,   // UPDATED: raised per user request (was 0.3 based on analysis)
+    // ACTION ITEM 3: Entry Price Caps - Tighten max entry (losers had expensive entries)
+    max_entry_price: 0.30,  // ENHANCED: from 0.6 → 0.30 for better R:R ratio
     min_rr: 1.5,  // minimum R:R ratio — blocks coinflip trades
     min_entry_price: 0.0,
     entry_window_min: 220,  // OPTIMIZED: winners averaged 218s, favor early timing
@@ -21,19 +23,25 @@ const defaults = {
     side_bias: null,
     side_up_weight: 1.0,
     side_down_weight: 1.0,
+    // ACTION ITEM 1: RSI Filter Enhancement - Block counter-trend trades
+    rsi_down_max: 35,       // NEW: Block DOWN trades when RSI <35 (oversold bounce)
+    rsi_up_min: 65,         // NEW: Block UP trades when RSI >65 (overbought drop)
+    // ACTION ITEM 4: Momentum Confirmation - Price + EMA alignment required
+    require_price_ema_alignment: true,  // NEW: Price must be on same side as trade direction
+    min_momentum_acceleration: 2.0,     // NEW: Require accelerating momentum
     // Direction-specific: longs need strong signals (updated based on analysis)
-    long_min_dist_bps: 40,  // ALIGNED: use global minimum for consistency  
+    long_min_dist_bps: 15,  // ENHANCED: aligned with global minimum  
     long_min_slope: 10,     // ALIGNED: use global minimum for consistency
     // Direction-specific: shorts skip the mid-range death zone  
-    short_dead_zone_lo: 30, // UPDATED: avoid weak signals entirely (was 5)
-    short_dead_zone_hi: 40, // UPDATED: tighter range (was 8) 
+    short_dead_zone_lo: 10, // ENHANCED: tighter range to avoid weak signals
+    short_dead_zone_hi: 15, // ENHANCED: aligned with new minimum
     short_dead_slope_lo: 8, // UPDATED: avoid weak momentum (was 3)
     short_dead_slope_hi: 10, // UPDATED: narrow dead zone (was 6)
     enabled: true,
   },
   session: {
     min_slope_abs: 10.0,    // OPTIMIZED: align with EMA strategy 
-    max_entry_price: 0.6,   // UPDATED: raised per user request
+    max_entry_price: 0.30,  // ENHANCED: tighter cap for better R:R
     min_rr: 1.5,
     min_entry_price: 0.0,
     entry_window_min: 220,  // OPTIMIZED: favor early timing
@@ -41,6 +49,11 @@ const defaults = {
     side_bias: null,
     side_up_weight: 1.0,
     side_down_weight: 1.0,
+    // ACTION ITEMS: Match EMA strategy enhancements
+    rsi_down_max: 35,       // NEW: Block DOWN trades when RSI <35
+    rsi_up_min: 65,         // NEW: Block UP trades when RSI >65
+    require_price_ema_alignment: true,  // NEW: Price + EMA alignment
+    min_momentum_acceleration: 2.0,     // NEW: Momentum requirement
     enabled: true,
   },
 };

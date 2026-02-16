@@ -114,15 +114,20 @@ async function evaluate(market, btcPrice) {
   // Early entries now ENABLED with stronger filters (40+ BPS EMA dist, 10+ slope)
   // Previous early failures were due to weak signals, not timing itself
 
-  // === MANDATORY PARAMETER VALIDATION ===
-  // Updated based on last 45 trades analysis: winners vs losers patterns
+  // === ACTION ITEMS 1-4: ENHANCED MANDATORY VALIDATION ===
+  // Updated based on last 10 losses analysis: counter-trend trading patterns identified
   const HARD_MIN_PRICE_DIST = 3;  // price-to-EMA9 must be >= 3 bps
-  const HARD_MIN_EMA_DIST = 40;   // EMA9-to-EMA200 must be >= 40 bps (winners averaged 53.7 vs 38.3)  
+  const HARD_MIN_EMA_DIST = p.min_ema_dist_bps ?? 15;  // ACTION ITEM 2: Enhanced from 40→15 (losers averaged 9.3)
   const HARD_MIN_SLOPE = 10;      // absolute slope must be >= 10 (winners averaged 14.3 vs 11.5)
 
-  // RSI FILTERS: Direction-specific zones based on winning patterns
-  // DOWN trades: RSI 20-45 (captures bearish momentum + oversold bounces)
-  // UP trades: RSI 60+ (requires strong bullish momentum)
+  // ACTION ITEM 1: RSI FILTER ENHANCEMENT - Block counter-trend trades
+  // Problem: DOWN trades in oversold (RSI ~31) bounce up, UP trades in overbought (RSI ~74) drop down
+  const RSI_DOWN_MAX = p.rsi_down_max ?? 35;  // Block DOWN when RSI <35 (oversold bounce risk)
+  const RSI_UP_MIN = p.rsi_up_min ?? 65;      // Block UP when RSI >65 (overbought drop risk)
+
+  // ACTION ITEM 4: MOMENTUM CONFIRMATION - Price + EMA alignment check
+  const REQUIRE_MOMENTUM = p.require_price_ema_alignment ?? true;
+  const MIN_MOMENTUM_ACCEL = p.min_momentum_acceleration ?? 2.0;
 
   // Check hard minimums FIRST — these override everything else
   if (absPriceDistBps < HARD_MIN_PRICE_DIST) {
@@ -152,15 +157,16 @@ async function evaluate(market, btcPrice) {
   const RSI_SHORT_MIN = p.rsi_short_min ?? 20; // DOWN allows oversold bounces (winners at RSI 21+)  
   const RSI_SHORT_MAX = p.rsi_short_max ?? 45; // DOWN sweet spot caps at RSI 45
 
-  // === DYNAMIC ENTRY PRICE CAPS ===
-  // Based on signal strength - stronger signals get higher entry price allowances
+  // === ACTION ITEM 3: TIGHTER ENTRY PRICE CAPS ===
+  // Based on loss analysis: expensive entries (avg 0.361) had poor R:R → tighten caps
   function getDynamicMaxEntryPrice(emaDistBps, slopeAbs) {
-    if (emaDistBps >= 50 && slopeAbs >= 15) {
-      return 0.60; // Ultra-strong: 50+ BPS EMA + 15+ slope
-    } else if (emaDistBps >= 40 && slopeAbs >= 10) {
-      return 0.40; // Strong: 40+ BPS EMA + 10+ slope  
+    // ACTION ITEM 3: Reduced all caps - losers averaged 0.361 entry price
+    if (emaDistBps >= 30 && slopeAbs >= 15) {
+      return 0.30; // Ultra-strong: 30+ BPS EMA + 15+ slope (was 0.60)
+    } else if (emaDistBps >= 20 && slopeAbs >= 10) {
+      return 0.25; // Strong: 20+ BPS EMA + 10+ slope (was 0.40)
     } else {
-      return 0.30; // Minimum signals: baseline cap
+      return 0.20; // Minimum signals: tight cap (was 0.30)
     }
   }
 
@@ -168,12 +174,26 @@ async function evaluate(market, btcPrice) {
   if (price > fast && fast > slow && slope > 0) {
     const reasons = [];
     
+    // ACTION ITEM 1: RSI FILTER - Block UP trades when RSI >65 (overbought → drop)
+    if (currentRSI > RSI_UP_MIN) {
+      reasons.push(`RSI BLOCK: ${currentRSI.toFixed(1)} > ${RSI_UP_MIN} (overbought → drop risk, avg loss RSI was ${73.8})`);
+    }
+    
+    // ACTION ITEM 4: MOMENTUM CONFIRMATION - Price acceleration check
+    if (REQUIRE_MOMENTUM) {
+      const prevSlope = emaFast[emaFast.length - 3] - emaFast[emaFast.length - 4];
+      const slopeAccel = slope - prevSlope;
+      if (slopeAccel < MIN_MOMENTUM_ACCEL) {
+        reasons.push(`MOMENTUM BLOCK: acceleration ${slopeAccel.toFixed(2)} < ${MIN_MOMENTUM_ACCEL} (no momentum burst)`);
+      }
+    }
+    
     // MANDATORY: Longs need strong EMA-to-EMA distance (prevents weak long losses)
     if (absEmaDistBps < LONG_MIN_DIST) reasons.push(`EMA dist ${absEmaDistBps.toFixed(1)} < ${LONG_MIN_DIST} bps (long requires strong trend)`);
     if (slopeAbs < LONG_MIN_SLOPE) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${LONG_MIN_SLOPE} (long requires strong momentum)`);
     
-    // RSI confirmation — UP requires momentum zone
-    if (currentRSI < RSI_LONG_MIN) reasons.push(`RSI ${currentRSI.toFixed(1)} < ${RSI_LONG_MIN} (UP needs momentum — all winners had RSI 60+)`);
+    // Legacy RSI confirmation (now more restrictive due to ACTION ITEM 1)
+    if (currentRSI < RSI_LONG_MIN) reasons.push(`RSI ${currentRSI.toFixed(1)} < ${RSI_LONG_MIN} (UP needs momentum zone)`);
     if (currentRSI > RSI_LONG_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_LONG_MAX} (overbought — reversal risk)`);
     
     if (reasons.length === 0) {
@@ -195,20 +215,34 @@ async function evaluate(market, btcPrice) {
   if (price < fast && fast < slow && slope < 0) {
     const reasons = [];
     
-    // Check dead zones first (mid-range 5-8 bps dist or 3-6 slope = danger zone)
+    // ACTION ITEM 1: RSI FILTER - Block DOWN trades when RSI <35 (oversold → bounce)
+    if (currentRSI < RSI_DOWN_MAX) {
+      reasons.push(`RSI BLOCK: ${currentRSI.toFixed(1)} < ${RSI_DOWN_MAX} (oversold → bounce risk, avg loss RSI was ${31.2})`);
+    }
+    
+    // ACTION ITEM 4: MOMENTUM CONFIRMATION - Price acceleration check  
+    if (REQUIRE_MOMENTUM) {
+      const prevSlope = emaFast[emaFast.length - 3] - emaFast[emaFast.length - 4];
+      const slopeAccel = Math.abs(slope - prevSlope); // acceleration magnitude
+      if (slopeAccel < MIN_MOMENTUM_ACCEL) {
+        reasons.push(`MOMENTUM BLOCK: acceleration ${slopeAccel.toFixed(2)} < ${MIN_MOMENTUM_ACCEL} (no momentum burst)`);
+      }
+    }
+    
+    // Check dead zones (mid-range 10-15 bps dist updated per ACTION ITEM 2)
     const inDistDeadZone = absEmaDistBps >= SHORT_DEAD_ZONE_LO && absEmaDistBps < SHORT_DEAD_ZONE_HI;
     const inSlopeDeadZone = slopeAbs >= SHORT_DEAD_SLOPE_LO && slopeAbs < SHORT_DEAD_SLOPE_HI;
     
     if (inDistDeadZone) reasons.push(`EMA dist ${absEmaDistBps.toFixed(1)} in dead zone ${SHORT_DEAD_ZONE_LO}-${SHORT_DEAD_ZONE_HI} bps`);
     if (inSlopeDeadZone) reasons.push(`slope ${slopeAbs.toFixed(2)} in dead zone ${SHORT_DEAD_SLOPE_LO}-${SHORT_DEAD_SLOPE_HI}`);
     
-    // Additional base filters
-    if (absEmaDistBps < (p.min_ema_dist_bps ?? 3)) reasons.push(`EMA dist ${absEmaDistBps.toFixed(1)} < ${p.min_ema_dist_bps ?? 3} bps minimum`);
+    // Additional base filters (enhanced per ACTION ITEM 2)
+    if (absEmaDistBps < HARD_MIN_EMA_DIST) reasons.push(`EMA dist ${absEmaDistBps.toFixed(1)} < ${HARD_MIN_EMA_DIST} bps minimum`);
     if (slopeAbs < (p.min_slope_abs ?? 2)) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${p.min_slope_abs ?? 2} minimum`);
     
-    // RSI confirmation — DOWN requires bearish momentum zone (20-45)
+    // Legacy RSI confirmation (now more restrictive due to ACTION ITEM 1)
     if (currentRSI < RSI_SHORT_MIN) reasons.push(`RSI ${currentRSI.toFixed(1)} < ${RSI_SHORT_MIN} (too oversold — extreme reversal risk)`);
-    if (currentRSI > RSI_SHORT_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_SHORT_MAX} (DOWN winners cluster RSI 20-45)`);
+    if (currentRSI > RSI_SHORT_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_SHORT_MAX} (bearish momentum zone)`);
     
     if (reasons.length === 0) {
       const dynamicMaxPrice = getDynamicMaxEntryPrice(absEmaDistBps, slopeAbs);
