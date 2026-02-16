@@ -165,6 +165,23 @@ async function evaluate(market, btcPrice) {
     return { ...base, action: 'SKIP', side: null, reason: `Early window (${secsToEnd}s) — no momentum burst or slope acceleration; ${paStr}` };
   }
 
+  // === MANDATORY PARAMETER VALIDATION ===
+  // These are HARD MINIMUMS that cannot be bypassed — prevent parameter violation bugs
+  const HARD_MIN_PRICE_DIST = 3;  // price-to-EMA9 must be >= 3 bps
+  const HARD_MIN_EMA_DIST = 3;    // EMA9-to-EMA200 must be >= 3 bps  
+  const HARD_MIN_SLOPE = 2;       // absolute slope must be >= 2
+
+  // Check hard minimums FIRST — these override everything else
+  if (absPriceDistBps < HARD_MIN_PRICE_DIST) {
+    return { ...base, action: 'SKIP', side: null, reason: `HARD FILTER: price-to-EMA dist ${absPriceDistBps.toFixed(1)} < ${HARD_MIN_PRICE_DIST} bps minimum; ${paStr}` };
+  }
+  if (absEmaDistBps < HARD_MIN_EMA_DIST) {
+    return { ...base, action: 'SKIP', side: null, reason: `HARD FILTER: EMA-to-EMA dist ${absEmaDistBps.toFixed(1)} < ${HARD_MIN_EMA_DIST} bps minimum; ${paStr}` };
+  }
+  if (slopeAbs < HARD_MIN_SLOPE) {
+    return { ...base, action: 'SKIP', side: null, reason: `HARD FILTER: slope ${slopeAbs.toFixed(2)} < ${HARD_MIN_SLOPE} minimum; ${paStr}` };
+  }
+
   // === STANDARD ENTRY SIGNALS (150-240s before end) ===
   // Direction-specific filters:
   // LONGS: require strong signals (dist >= 8, slope >= 6) — weak longs lose
@@ -184,10 +201,15 @@ async function evaluate(market, btcPrice) {
   // LONG: price > EMAfast > EMAslow, strong signal required + RSI confirmation
   if (price > fast && fast > slow && slope > 0) {
     const reasons = [];
-    if (absEmaDistBps < LONG_MIN_DIST) reasons.push(`dist ${absEmaDistBps.toFixed(1)} < ${LONG_MIN_DIST} bps (long requires strong)`);
-    if (slopeAbs < LONG_MIN_SLOPE) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${LONG_MIN_SLOPE} (long requires strong)`);
+    
+    // MANDATORY: Longs need strong EMA-to-EMA distance (prevents weak long losses)
+    if (absEmaDistBps < LONG_MIN_DIST) reasons.push(`EMA dist ${absEmaDistBps.toFixed(1)} < ${LONG_MIN_DIST} bps (long requires strong trend)`);
+    if (slopeAbs < LONG_MIN_SLOPE) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${LONG_MIN_SLOPE} (long requires strong momentum)`);
+    
+    // RSI confirmation
     if (currentRSI < RSI_LONG_MIN) reasons.push(`RSI ${currentRSI.toFixed(1)} < ${RSI_LONG_MIN} (no momentum confirmation)`);
     if (currentRSI > RSI_LONG_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_LONG_MAX} (overbought — reversal risk)`);
+    
     if (reasons.length === 0) {
       return {
         ...base,
@@ -196,27 +218,25 @@ async function evaluate(market, btcPrice) {
         reason: `LONG signal: price ${price.toFixed(2)} > EMA${fastPeriod} ${fast.toFixed(2)} > EMA${slowPeriod} ${slow.toFixed(2)}; RSI ${currentRSI.toFixed(1)}; ${paStr}`,
       };
     }
-    return { ...base, action: 'SKIP', side: null, reason: `LONG aligned but filtered: ${reasons.join(', ')}; ${paStr}` };
+    return { ...base, action: 'SKIP', side: null, reason: `LONG FILTERED: ${reasons.join(', ')}; ${paStr}` };
   }
 
-  // SHORT: price < EMA20 < EMA200, skip the mid-range death zone
+  // SHORT: price < EMA9 < EMA200, skip the mid-range death zone
   if (price < fast && fast < slow && slope < 0) {
+    const reasons = [];
+    
+    // Check dead zones first (mid-range 5-8 bps dist or 3-6 slope = danger zone)
     const inDistDeadZone = absEmaDistBps >= SHORT_DEAD_ZONE_LO && absEmaDistBps < SHORT_DEAD_ZONE_HI;
     const inSlopeDeadZone = slopeAbs >= SHORT_DEAD_SLOPE_LO && slopeAbs < SHORT_DEAD_SLOPE_HI;
-
-    // Block if in the mid-range dead zone for BOTH dist and slope
-    if (inDistDeadZone || inSlopeDeadZone) {
-      const reasons = [];
-      if (inDistDeadZone) reasons.push(`dist ${absEmaDistBps.toFixed(1)} in dead zone ${SHORT_DEAD_ZONE_LO}-${SHORT_DEAD_ZONE_HI} bps`);
-      if (inSlopeDeadZone) reasons.push(`slope ${slopeAbs.toFixed(2)} in dead zone ${SHORT_DEAD_SLOPE_LO}-${SHORT_DEAD_SLOPE_HI}`);
-      return { ...base, action: 'SKIP', side: null, reason: `SHORT mid-range trap filtered: ${reasons.join(', ')}; ${paStr}` };
-    }
-
-    // Must still pass base filters + RSI
-    const reasons = [];
-    if (absEmaDistBps < p.min_ema_dist_bps) reasons.push(`dist ${absEmaDistBps.toFixed(1)} < ${p.min_ema_dist_bps} bps`);
-    if (slopeAbs < p.min_slope_abs) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${p.min_slope_abs}`);
+    
+    if (inDistDeadZone) reasons.push(`EMA dist ${absEmaDistBps.toFixed(1)} in dead zone ${SHORT_DEAD_ZONE_LO}-${SHORT_DEAD_ZONE_HI} bps`);
+    if (inSlopeDeadZone) reasons.push(`slope ${slopeAbs.toFixed(2)} in dead zone ${SHORT_DEAD_SLOPE_LO}-${SHORT_DEAD_SLOPE_HI}`);
+    
+    // Additional base filters
+    if (absEmaDistBps < (p.min_ema_dist_bps ?? 3)) reasons.push(`EMA dist ${absEmaDistBps.toFixed(1)} < ${p.min_ema_dist_bps ?? 3} bps minimum`);
+    if (slopeAbs < (p.min_slope_abs ?? 2)) reasons.push(`slope ${slopeAbs.toFixed(2)} < ${p.min_slope_abs ?? 2} minimum`);
     if (currentRSI > RSI_SHORT_MAX) reasons.push(`RSI ${currentRSI.toFixed(1)} > ${RSI_SHORT_MAX} (no bearish confirmation)`);
+    
     if (reasons.length === 0) {
       return {
         ...base,
@@ -225,7 +245,7 @@ async function evaluate(market, btcPrice) {
         reason: `SHORT signal: price ${price.toFixed(2)} < EMA${fastPeriod} ${fast.toFixed(2)} < EMA${slowPeriod} ${slow.toFixed(2)}; RSI ${currentRSI.toFixed(1)}; ${paStr}`,
       };
     }
-    return { ...base, action: 'SKIP', side: null, reason: `SHORT aligned but filtered: ${reasons.join(', ')}; ${paStr}` };
+    return { ...base, action: 'SKIP', side: null, reason: `SHORT FILTERED: ${reasons.join(', ')}; ${paStr}` };
   }
 
   // Not aligned at all
