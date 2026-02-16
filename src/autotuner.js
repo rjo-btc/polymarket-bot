@@ -13,7 +13,7 @@ const defaults = {
   ema: {
     min_ema_dist_bps: 40,   // OPTIMIZED: winners averaged 53.7 vs losers 38.3 BPS
     min_slope_abs: 10.0,    // OPTIMIZED: winners averaged 14.3 vs losers 11.5 slope
-    max_entry_price: 0.3,   // OPTIMIZED: cheap entries (<$0.30) had 50% win rate vs 30% mid-range
+    max_entry_price: 0.6,   // UPDATED: raised per user request (was 0.3 based on analysis)
     min_rr: 1.5,  // minimum R:R ratio — blocks coinflip trades
     min_entry_price: 0.0,
     entry_window_min: 220,  // OPTIMIZED: winners averaged 218s, favor early timing
@@ -33,7 +33,7 @@ const defaults = {
   },
   session: {
     min_slope_abs: 10.0,    // OPTIMIZED: align with EMA strategy 
-    max_entry_price: 0.3,   // OPTIMIZED: favor cheap entries
+    max_entry_price: 0.6,   // UPDATED: raised per user request
     min_rr: 1.5,
     min_entry_price: 0.0,
     entry_window_min: 220,  // OPTIMIZED: favor early timing
