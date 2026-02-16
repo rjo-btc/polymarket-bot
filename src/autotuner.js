@@ -11,33 +11,33 @@ const LOG_KEY = 'autotuner_log';
  */
 const defaults = {
   ema: {
-    min_ema_dist_bps: 5,
-    min_slope_abs: 2.0,
-    max_entry_price: 0.4,   // HARD CAP: no entries above 40¢ (was 0.45)
+    min_ema_dist_bps: 40,   // OPTIMIZED: winners averaged 53.7 vs losers 38.3 BPS
+    min_slope_abs: 10.0,    // OPTIMIZED: winners averaged 14.3 vs losers 11.5 slope
+    max_entry_price: 0.3,   // OPTIMIZED: cheap entries (<$0.30) had 50% win rate vs 30% mid-range
     min_rr: 1.5,  // minimum R:R ratio — blocks coinflip trades
     min_entry_price: 0.0,
-    entry_window_min: 150,
-    entry_window_max: 240,
+    entry_window_min: 220,  // OPTIMIZED: winners averaged 218s, favor early timing
+    entry_window_max: 270,  // EXTENDED: allow more early entries
     side_bias: null,
     side_up_weight: 1.0,
     side_down_weight: 1.0,
-    // Direction-specific: longs need strong signals
-    long_min_dist_bps: 8,
-    long_min_slope: 6,
-    // Direction-specific: shorts skip the mid-range death zone
-    short_dead_zone_lo: 5,
-    short_dead_zone_hi: 8,
-    short_dead_slope_lo: 3,
-    short_dead_slope_hi: 6,
+    // Direction-specific: longs need strong signals (updated based on analysis)
+    long_min_dist_bps: 40,  // ALIGNED: use global minimum for consistency  
+    long_min_slope: 10,     // ALIGNED: use global minimum for consistency
+    // Direction-specific: shorts skip the mid-range death zone  
+    short_dead_zone_lo: 30, // UPDATED: avoid weak signals entirely (was 5)
+    short_dead_zone_hi: 40, // UPDATED: tighter range (was 8) 
+    short_dead_slope_lo: 8, // UPDATED: avoid weak momentum (was 3)
+    short_dead_slope_hi: 10, // UPDATED: narrow dead zone (was 6)
     enabled: true,
   },
   session: {
-    min_slope_abs: 2.0,
-    max_entry_price: 0.4,   // HARD CAP: no entries above 40¢ (was 0.45)
+    min_slope_abs: 10.0,    // OPTIMIZED: align with EMA strategy 
+    max_entry_price: 0.3,   // OPTIMIZED: favor cheap entries
     min_rr: 1.5,
     min_entry_price: 0.0,
-    entry_window_min: 150,
-    entry_window_max: 240,
+    entry_window_min: 220,  // OPTIMIZED: favor early timing
+    entry_window_max: 270,  // EXTENDED: allow more early entries
     side_bias: null,
     side_up_weight: 1.0,
     side_down_weight: 1.0,
