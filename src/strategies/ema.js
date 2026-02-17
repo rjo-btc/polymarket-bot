@@ -157,16 +157,16 @@ async function evaluate(market, btcPrice) {
   const RSI_SHORT_MIN = p.rsi_short_min ?? 20; // DOWN allows oversold bounces (winners at RSI 21+)  
   const RSI_SHORT_MAX = p.rsi_short_max ?? 45; // DOWN sweet spot caps at RSI 45
 
-  // === ACTION ITEM 3: TIGHTER ENTRY PRICE CAPS ===
-  // Based on loss analysis: expensive entries (avg 0.361) had poor R:R → tighten caps
+  // === ENTRY PRICE CAPS - Updated per user request (Feb 17) ===
+  // User requested 0.399 max entry price
   function getDynamicMaxEntryPrice(emaDistBps, slopeAbs) {
-    // ACTION ITEM 3: Reduced all caps - losers averaged 0.361 entry price
+    // USER REQUEST: Max entry 0.399 (Feb 17)
     if (emaDistBps >= 30 && slopeAbs >= 15) {
-      return 0.30; // Ultra-strong: 30+ BPS EMA + 15+ slope (was 0.60)
+      return 0.399; // Ultra-strong: 30+ BPS EMA + 15+ slope
     } else if (emaDistBps >= 20 && slopeAbs >= 10) {
-      return 0.25; // Strong: 20+ BPS EMA + 10+ slope (was 0.40)
+      return 0.35; // Strong: 20+ BPS EMA + 10+ slope
     } else {
-      return 0.20; // Minimum signals: tight cap (was 0.30)
+      return 0.30; // Minimum signals: baseline cap
     }
   }
 

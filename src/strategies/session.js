@@ -119,19 +119,19 @@ async function evaluate(market, btcPrice) {
 
   const paStr = `PA[session=${session.active ? session.name : 'off'},est=${estTime},close1m=${close1m.toFixed(2)},prevClose1m=${prevClose1m.toFixed(2)},vol1mTicks=${vol1mTicks.toFixed(0)},vol5mAvgTicks=${vol5mAvgTicks.toFixed(0)},atr3=${atr3.toFixed(2)},atr8=${atr8.toFixed(2)},confirmUp=${confirmUp},confirmDown=${confirmDown},volExpand=${volExpand},atrExpand=${atrExpand},atrContract=${atrContract}]`;
 
-  // === ACTION ITEM 3: TIGHTER ENTRY PRICE CAPS ===
-  // Session strategy enhanced with tighter caps based on loss analysis
+  // === ENTRY PRICE CAPS - Updated per user request (Feb 17) ===
+  // User requested 0.399 max entry price
   function getDynamicMaxEntryPriceSession(volExpand, atrExpand, atr3, atr8) {
     const volRatio = vol1mTicks / vol5mAvgTicks;
     const atrRatio = atr3 / atr8;
     
-    // ACTION ITEM 3: Reduced caps - losers had expensive entries averaging 0.361
+    // USER REQUEST: Max entry 0.399 (Feb 17)
     if (volRatio >= 1.5 && atrRatio >= 1.3) {
-      return 0.30; // Ultra-strong: high volume + ATR expansion (was 0.60)
+      return 0.399; // Ultra-strong: high volume + ATR expansion
     } else if (volRatio >= 1.2 && atrRatio >= 1.1) {
-      return 0.25; // Strong: moderate expansion (was 0.40)
+      return 0.35; // Strong: moderate expansion
     } else {
-      return 0.20; // Minimum signals: tight cap (was 0.30)
+      return 0.30; // Minimum signals: baseline cap
     }
   }
 
