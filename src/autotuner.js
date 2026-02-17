@@ -14,8 +14,8 @@ const defaults = {
     // ACTION ITEM 2: EMA Distance Threshold - Increase minimum (losers averaged 9.3 bps)
     min_ema_dist_bps: 15,   // ENHANCED: from 40 → 15 bps minimum for cleaner signals
     min_slope_abs: 10.0,    // OPTIMIZED: winners averaged 14.3 vs losers 11.5 slope
-    // ACTION ITEM 3: Entry Price Caps - Tighten max entry (losers had expensive entries)
-    max_entry_price: 0.30,  // ENHANCED: from 0.6 → 0.30 for better R:R ratio
+    // ACTION ITEM 3: Entry Price Caps - User updated to 0.399 (Feb 17)
+    max_entry_price: 0.399,  // USER REQUEST: increased from 0.30 → 0.399
     min_rr: 1.5,  // minimum R:R ratio — blocks coinflip trades
     min_entry_price: 0.0,
     entry_window_min: 220,  // OPTIMIZED: winners averaged 218s, favor early timing
@@ -41,7 +41,7 @@ const defaults = {
   },
   session: {
     min_slope_abs: 10.0,    // OPTIMIZED: align with EMA strategy 
-    max_entry_price: 0.30,  // ENHANCED: tighter cap for better R:R
+    max_entry_price: 0.399,  // USER REQUEST: increased from 0.30 → 0.399
     min_rr: 1.5,
     min_entry_price: 0.0,
     entry_window_min: 220,  // OPTIMIZED: favor early timing
