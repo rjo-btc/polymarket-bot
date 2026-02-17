@@ -13,10 +13,11 @@
 // Estimated book depth (shares at best bid/ask) for 5m BTC markets
 function estimateBookDepth(secsToEnd, entryPrice) {
   // Price multiplier: mid-range prices have deepest books
+  // FIXED: Don't punish very cheap entries (often indicate strong moves)
   let priceMult;
-  if (entryPrice <= 0.15) priceMult = 0.3;
-  else if (entryPrice <= 0.25) priceMult = 0.5;
-  else if (entryPrice <= 0.35) priceMult = 0.7;
+  if (entryPrice <= 0.10) priceMult = 0.8;  // FIXED: was 0.3, now 0.8 (cheap = good R:R)
+  else if (entryPrice <= 0.20) priceMult = 0.7;  // FIXED: was 0.3/0.5, now 0.7
+  else if (entryPrice <= 0.30) priceMult = 0.8;  // FIXED: was 0.5, now 0.8
   else if (entryPrice <= 0.50) priceMult = 1.0;
   else if (entryPrice <= 0.65) priceMult = 0.9;
   else if (entryPrice <= 0.75) priceMult = 0.7;
@@ -30,26 +31,29 @@ function estimateBookDepth(secsToEnd, entryPrice) {
   else if (secsToEnd >= 150) timeMult = 0.60;
   else timeMult = 0.40;
 
-  const BASE_DEPTH = parseInt(process.env.BOOK_DEPTH_BASE) || 800;
+  const BASE_DEPTH = parseInt(process.env.BOOK_DEPTH_BASE) || 1500;  // INCREASED: was 800, now 1500
   return Math.round(BASE_DEPTH * priceMult * timeMult);
 }
 
 // Estimate execution cost for a given position size
 function estimateExecCost(shares, bookDepth, entryPrice) {
-  // Spread: wider at extreme prices
-  const spread = (entryPrice < 0.3 || entryPrice > 0.7) ? 0.04 : 0.02;
+  // FIXED: More reasonable execution costs, especially for cheap entries
+  
+  // Spread: narrower spreads, less punitive for cheap entries
+  const spread = (entryPrice < 0.2) ? 0.02 : (entryPrice < 0.4 || entryPrice > 0.7) ? 0.03 : 0.015;
   const spreadCost = shares * (spread / 2);
 
-  // Market impact: walking the book when size > depth
+  // Market impact: more lenient, 3x book depth before major impact
   let marketImpact = 0;
-  if (shares > bookDepth) {
-    const tier1 = Math.min(shares - bookDepth, bookDepth);
-    const tier2 = Math.max(0, shares - bookDepth * 2);
-    marketImpact = tier1 * 0.01 + tier2 * 0.03;
+  if (shares > bookDepth * 1.5) {  // FIXED: was bookDepth, now 1.5x
+    const tier1 = Math.min(shares - bookDepth * 1.5, bookDepth);
+    const tier2 = Math.max(0, shares - bookDepth * 2.5);
+    marketImpact = tier1 * 0.005 + tier2 * 0.015;  // FIXED: was 0.01/0.03, now 0.005/0.015
   }
 
-  // Fill delay: ~0.5 cents per share
-  const fillDelay = shares * 0.005;
+  // Fill delay: proportional to entry price, not fixed per share
+  const fillDelayRate = Math.max(0.001, entryPrice * 0.05);  // FIXED: was 0.005 flat, now proportional
+  const fillDelay = shares * fillDelayRate;
 
   return spreadCost + marketImpact + fillDelay;
 }
@@ -57,10 +61,12 @@ function estimateExecCost(shares, bookDepth, entryPrice) {
 // R:R-aware execution cost tolerance
 function getMaxExecCostPct(entryPrice) {
   const rr = (1 - entryPrice) / entryPrice;
-  if (rr >= 3.0) return 0.15;  // cheap entries (≤0.25): high R:R compensates
-  if (rr >= 1.5) return 0.10;  // mid-cheap (0.25-0.40)
-  if (rr >= 0.8) return 0.07;  // mid (0.40-0.55)
-  return 0.04;                  // expensive (0.55+): thin margin
+  // FIXED: More generous tolerances, especially for high R:R trades
+  if (rr >= 10.0) return 0.25;  // ADDED: ultra-cheap entries (≤0.10): massive R:R
+  if (rr >= 3.0) return 0.20;   // INCREASED: was 0.15, now 0.20
+  if (rr >= 1.5) return 0.15;   // INCREASED: was 0.10, now 0.15
+  if (rr >= 0.8) return 0.10;   // INCREASED: was 0.07, now 0.10
+  return 0.06;                  // INCREASED: was 0.04, now 0.06
 }
 
 /**
@@ -74,13 +80,13 @@ function calcLiquidityMax(entryPrice, secsToEnd) {
   const bookDepth = estimateBookDepth(secsToEnd, entryPrice);
   const maxExecPct = getMaxExecCostPct(entryPrice);
 
-  // Hard ceiling: never exceed 2x book depth in shares
-  const hardMaxShares = bookDepth * 2;
+  // Hard ceiling: never exceed 3x book depth in shares (was 2x)
+  const hardMaxShares = bookDepth * 3;  // INCREASED: was 2x, now 3x
   const hardMaxStake = hardMaxShares * entryPrice;
 
   // Binary search for max stake where exec cost stays under tolerance
-  let lo = 10, hi = Math.min(5000, hardMaxStake);
-  let bestStake = 10;
+  let lo = 50, hi = Math.min(10000, hardMaxStake);  // FIXED: min 50 (was 10), max 10k (was 5k)
+  let bestStake = 50;
 
   for (let i = 0; i < 30; i++) {
     const mid = (lo + hi) / 2;
@@ -118,6 +124,16 @@ function calcLiquidityMax(entryPrice, secsToEnd) {
  * @returns {{ stake: number, capped: boolean, reason: string|null, meta: object }}
  */
 function liquidityCap(proposedStake, entryPrice, secsToEnd) {
+  // EXEMPTION: Very cheap entries (≤0.10) have excellent R:R - skip liquidity cap
+  if (entryPrice <= 0.10) {
+    return {
+      stake: proposedStake,
+      capped: false,
+      reason: `LIQUIDITY CAP BYPASSED: Entry price ${entryPrice.toFixed(3)} ≤ 0.10 (excellent R:R justifies execution costs)`,
+      meta: { exemption: true, entryPrice, rr: ((1 - entryPrice) / entryPrice).toFixed(2) },
+    };
+  }
+
   const liq = calcLiquidityMax(entryPrice, secsToEnd);
 
   if (proposedStake <= liq.maxStake) {
