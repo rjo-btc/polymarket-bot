@@ -35,14 +35,14 @@ const PHENOMENA = {
     guard(signal, ctx) {
       const state = ctx.phenomenaState.ema_lag_reversal || {};
       if (state.active_side && signal.side === state.active_side && state.consecutive_losses >= 2) {
-        // Time decay: every 5 min reduces effective severity by 1 level
+        // Time decay: every 20 min reduces effective severity by 1 level (was 5min)
         const minSince = state.last_triggered ? (Date.now() - state.last_triggered) / 60000 : 0;
-        const decaySteps = Math.floor(minSince / 5);
+        const decaySteps = Math.floor(minSince / 20);
         const effectiveLosses = Math.max(0, state.consecutive_losses - decaySteps);
-        if (effectiveLosses < 2) return { block: false };
+        if (effectiveLosses < 1) return { block: false }; // was 2, now 1
         
-        // HARD BLOCK if fresh (< 5 min) AND 3+ losses
-        if (minSince < 5 && state.consecutive_losses >= 3) {
+        // HARD BLOCK if fresh (< 30 min) AND 2+ losses (was 3+)
+        if (minSince < 30 && state.consecutive_losses >= 2) {
           return {
             block: true,
             reason: `EMA_LAG_BLOCK: ${state.consecutive_losses} consecutive ${signal.side.toUpperCase()} losses in < 5min — hard block until decay`,
@@ -72,15 +72,15 @@ const PHENOMENA = {
     },
     guard(signal, ctx) {
       const state = ctx.phenomenaState.side_streak_loss || {};
-      if (state.losing_side === signal.side && state.streak >= 3) {
-        // Time decay: every 5 min reduces effective streak by 1
+      if (state.losing_side === signal.side && state.streak >= 2) { // was 3, now 2
+        // Time decay: every 15 min reduces effective streak by 1 (was 5min)
         const minSince = state.last_triggered ? (Date.now() - state.last_triggered) / 60000 : 0;
-        const decaySteps = Math.floor(minSince / 5);
+        const decaySteps = Math.floor(minSince / 15);
         const effectiveStreak = Math.max(0, state.streak - decaySteps);
-        if (effectiveStreak < 3) return { block: false };
+        if (effectiveStreak < 2) return { block: false }; // was 3, now 2
         
-        // HARD BLOCK if fresh (< 10 min) AND 4+ losses
-        if (minSince < 10 && state.streak >= 4) {
+        // HARD BLOCK if fresh (< 45 min) AND 3+ losses (was 4+, was 10min)
+        if (minSince < 45 && state.streak >= 3) {
           return {
             block: true,
             reason: `SIDE_STREAK_BLOCK: ${state.streak} ${signal.side.toUpperCase()} losses in last 8 trades — hard block until decay`,
@@ -112,15 +112,24 @@ const PHENOMENA = {
     },
     guard(signal, ctx) {
       const state = ctx.phenomenaState.flat_market_chop || {};
-      if (state.recent_chop_losses >= 2) {
-        // Time decay: every 5 min reduces effective count by 1
+      if (state.recent_chop_losses >= 1) { // was 2, now 1
+        // Time decay: every 30 min reduces effective count by 1 (was 5min)
         const minSince = state.last_triggered ? (Date.now() - state.last_triggered) / 60000 : 0;
-        const decaySteps = Math.floor(minSince / 5);
+        const decaySteps = Math.floor(minSince / 30);
         const effectiveChop = Math.max(0, state.recent_chop_losses - decaySteps);
-        if (effectiveChop < 2) return { block: false };
+        if (effectiveChop < 1) return { block: false }; // was 2, now 1
+        
+        // HARD BLOCK if fresh (< 60 min) AND 2+ chop losses
+        if (minSince < 60 && state.recent_chop_losses >= 2) {
+          return {
+            block: true,
+            reason: `CHOP_BLOCK: ${state.recent_chop_losses} flat market losses in < 60min — hard block until decay`,
+          };
+        }
+        
         return {
           block: false,
-          tighten: { min_dist_multiplier: 2.0 },
+          tighten: { min_dist_multiplier: 3.0 }, // was 2.0, now 3.0
           reason: `CHOP_GUARD: ${state.recent_chop_losses} chop losses (eff. ${effectiveChop} after ${decaySteps > 0 ? decaySteps * 5 + 'min decay' : 'no decay'}) — 2x EMA dist`,
         };
       }
@@ -137,15 +146,24 @@ const PHENOMENA = {
     },
     guard(signal, ctx) {
       const state = ctx.phenomenaState.expensive_entry_trap || {};
-      if (state.recent_expensive_losses >= 2) {
-        // Time decay: every 5 min reduces effective count by 1
+      if (state.recent_expensive_losses >= 1) { // was 2, now 1
+        // Time decay: every 60 min reduces effective count by 1 (was 5min)
         const minSince = state.last_triggered ? (Date.now() - state.last_triggered) / 60000 : 0;
-        const decaySteps = Math.floor(minSince / 5);
+        const decaySteps = Math.floor(minSince / 60);
         const effectiveCount = Math.max(0, state.recent_expensive_losses - decaySteps);
-        if (effectiveCount < 2) return { block: false };
+        if (effectiveCount < 1) return { block: false }; // was 2, now 1
+        
+        // HARD BLOCK expensive entries if 2+ losses in 2 hours
+        if (minSince < 120 && state.recent_expensive_losses >= 2) {
+          return {
+            block: true,
+            reason: `ENTRY_TRAP_BLOCK: ${state.recent_expensive_losses} expensive losses — all high-price entries blocked for 2h`,
+          };
+        }
+        
         return {
           block: false,
-          tighten: { max_entry_override: 0.50 },
+          tighten: { max_entry_override: 0.35 }, // was 0.50, now 0.35
           reason: `ENTRY_TRAP_GUARD: ${state.recent_expensive_losses} expensive losses (eff. ${effectiveCount} after ${decaySteps > 0 ? decaySteps * 5 + 'min decay' : 'no decay'}) — temp cap 0.50`,
         };
       }
@@ -175,10 +193,10 @@ const PHENOMENA = {
         return { block: false }; // trend confirmed, no penalty
       }
       
-      if (streakSide === signal.side && lossStreak >= 2) {
-        // Time decay: every 5 minutes since last trade reduces effective streak by 1
+      if (streakSide === signal.side && lossStreak >= 1) { // was 2, now 1
+        // Time decay: every 20 minutes since last trade reduces effective streak by 1 (was 5min)
         const minutesSinceLast = (Date.now() - lastTradeAt) / 60000;
-        const decaySteps = Math.floor(minutesSinceLast / 5);
+        const decaySteps = Math.floor(minutesSinceLast / 20);
         const effectiveStreak = Math.max(1, lossStreak - decaySteps);
         
         if (effectiveStreak >= 2) {
@@ -334,9 +352,9 @@ function onTradeResolved(trade) {
   saveState();
 }
 
-// Hard block config
-const HARD_BLOCK_AFTER = 2;          // consecutive same-side losses before hard block (reduced from 4)
-const HARD_BLOCK_DURATION_MS = 10 * 60 * 1000;  // 10 min hard block (reduced from 15)
+// Hard block config - MUCH MORE AGGRESSIVE
+const HARD_BLOCK_AFTER = 1;          // consecutive same-side losses before hard block (was 2)
+const HARD_BLOCK_DURATION_MS = 45 * 60 * 1000;  // 45 min hard block (was 10 min)
 
 // Called before entering a trade — returns combined guard result
 function checkGuards(signal) {
@@ -395,11 +413,11 @@ function checkGuards(signal) {
     activePatterns.push('LOW_DIST');
   }
 
-  // EMERGENCY STOP: 3+ patterns = hard block for 5 minutes
-  if (activePatterns.length >= 3) {
+  // EMERGENCY STOP: 2+ patterns = hard block for 60 minutes (was 3+ patterns, 5 min)
+  if (activePatterns.length >= 2) {
     return {
       block: true, 
-      reason: `EMERGENCY STOP: ${activePatterns.length} failure patterns active (${activePatterns.join(', ')}) — all trades blocked for 5 min`,
+      reason: `EMERGENCY STOP: ${activePatterns.length} failure patterns active (${activePatterns.join(', ')}) — all trades blocked for 60 min`,
       phenomena: [{ key: 'multi_pattern_block', block: true }],
     };
   }
