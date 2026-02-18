@@ -235,10 +235,7 @@
               <div class="value" id="rsiValue">-</div>
               <div class="muted tiny" id="rsiMeta"></div>
             </div>
-            <div class="stat">
-              <div class="label">Total PnL</div>
-              <div class="value" id="totalPnl">-</div>
-            </div>
+            <!-- Total PnL bubble removed per Ryan's request -->
             <div class="stat">
               <div class="label">Total capital</div>
               <div class="value" id="totalCapital">-</div>
@@ -537,8 +534,7 @@
       }
 
       function renderSummary(s) {
-        $('totalPnl').textContent = fmtUsd(s.total_pnl_usd);
-        $('totalPnl').className = `value ${s.total_pnl_usd >= 0 ? 'green' : 'red'}`;
+        // Total PnL bubble removed per Ryan's request
         $('totalCapital').textContent = fmtUsd(s.total_capital_usd);
         $('capitalPerTrade').textContent = fmtUsd(s.capital_per_trade_usd);
 
