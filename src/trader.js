@@ -352,17 +352,27 @@ async function traderLoop() {
                 side: decision.side,
               };
 
-              // Score confidence and apply tier multiplier (only after Kelly activation at 50 trades)
+              // Score confidence and apply tier multiplier 
               const confidence = scoreSetup(setup);
               const KELLY_THRESHOLD = 50;
               const resolvedCount = getAllPositions.all().filter(p => p.status === 'resolved').length;
               const kellyActive = resolvedCount >= KELLY_THRESHOLD;
+              const isSessionTrade = decision.strategy === 'session';
 
               let stakeUsd;
-              if (kellyActive) {
+              if (isSessionTrade) {
+                // SESSION TRADES: Always use aggressive sizing (no 50-trade threshold)
+                // Start with 10% of capital, capped at 10% max regardless of liquidity
+                const capital = getCurrentCapital();
+                const maxSessionStake = capital * 0.10; // 10% cap
+                stakeUsd = Math.round(maxSessionStake * 100) / 100;
+                console.log(`[Trader] SESSION SIZING: $${stakeUsd} (10% of $${capital.toFixed(2)} capital) — no Kelly threshold for sessions`);
+              } else if (kellyActive) {
+                // EMA TRADES: Use Kelly after 50 trades
                 stakeUsd = Math.round(getStakeSize() * confidence.multiplier * 100) / 100;
                 console.log(`[Trader] CONFIDENCE: Tier ${confidence.tier} (${confidence.tier_label}) score=${confidence.score} → ${confidence.multiplier}x size ($${stakeUsd})`);
               } else {
+                // EMA TRADES: Use base sizing before 50 trades
                 stakeUsd = getStakeSize();
               }
 
@@ -371,6 +381,16 @@ async function traderLoop() {
               if (liqResult.capped) {
                 console.log(`[Trader] ${liqResult.reason}`);
                 stakeUsd = liqResult.stake;
+              }
+
+              // Final session trade cap: never exceed 10% of capital regardless of liquidity
+              if (isSessionTrade) {
+                const capital = getCurrentCapital();
+                const maxSessionCap = capital * 0.10;
+                if (stakeUsd > maxSessionCap) {
+                  console.log(`[Trader] SESSION CAP: Reducing $${stakeUsd} to $${maxSessionCap.toFixed(2)} (10% capital limit)`);
+                  stakeUsd = Math.round(maxSessionCap * 100) / 100;
+                }
               }
 
               const shares = stakeUsd / entryPrice;
