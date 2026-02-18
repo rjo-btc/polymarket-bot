@@ -258,14 +258,19 @@
               <div class="muted tiny" id="weightedWRMeta"></div>
             </div>
             <div class="stat">
-              <div class="label">Max drawdown</div>
-              <div class="value red" id="maxDrawdown">-</div>
-              <div class="muted tiny" id="maxDrawdownMeta"></div>
+              <div class="label">EMA Strategy</div>
+              <div class="value" id="emaStrategy">-</div>
+              <div class="muted tiny" id="emaStrategyMeta"></div>
             </div>
             <div class="stat">
-              <div class="label">Total return</div>
-              <div class="value" id="totalReturn">-</div>
-              <div class="muted tiny" id="totalReturnMeta"></div>
+              <div class="label">Session Strategy</div>
+              <div class="value" id="sessionStrategy">-</div>
+              <div class="muted tiny" id="sessionStrategyMeta"></div>
+            </div>
+            <div class="stat">
+              <div class="label">Total PnL & Return</div>
+              <div class="value" id="totalPnlReturn">-</div>
+              <div class="muted tiny" id="totalPnlReturnMeta"></div>
             </div>
           </div>
         </section>
@@ -555,16 +560,36 @@
         if (cvTrades > 0) wrMeta += ` · v3: ${cvWR?.toFixed(1) ?? '?'}% (${cvTrades})`;
         $('weightedWRMeta').textContent = wrMeta;
 
-        // Max drawdown
-        $('maxDrawdown').textContent = s.max_drawdown_usd != null ? '-' + fmtUsd(s.max_drawdown_usd) : '-';
-        $('maxDrawdownMeta').textContent = s.max_drawdown_usd > 0 ? ((s.max_drawdown_usd / CAPITAL_START * 100).toFixed(1) + '% of start') : '';
+        // EMA Strategy stats
+        const emaStats = s.by_strategy?.find(strat => strat.strategy?.toLowerCase() === 'ema');
+        if (emaStats) {
+          const emaWR = emaStats.win_rate_pct?.toFixed(1) || '0.0';
+          $('emaStrategy').textContent = `${emaWR}% WR`;
+          $('emaStrategy').className = `value ${emaStats.win_rate_pct >= 50 ? 'green' : 'red'}`;
+          $('emaStrategyMeta').textContent = `${fmtUsd(emaStats.total_pnl_usd)} • ${emaStats.resolved_trades || 0} trades`;
+        } else {
+          $('emaStrategy').textContent = '0% WR';
+          $('emaStrategyMeta').textContent = '$0.00 • 0 trades';
+        }
 
-        // Total return
+        // Session Strategy stats  
+        const sessionStats = s.by_strategy?.find(strat => strat.strategy?.toLowerCase() === 'session');
+        if (sessionStats) {
+          const sessionWR = sessionStats.win_rate_pct?.toFixed(1) || '0.0';
+          $('sessionStrategy').textContent = `${sessionWR}% WR`;
+          $('sessionStrategy').className = `value ${sessionStats.win_rate_pct >= 50 ? 'green' : 'red'}`;
+          $('sessionStrategyMeta').textContent = `${fmtUsd(sessionStats.total_pnl_usd)} • ${sessionStats.resolved_trades || 0} trades`;
+        } else {
+          $('sessionStrategy').textContent = '0% WR';
+          $('sessionStrategyMeta').textContent = '$0.00 • 0 trades';
+        }
+
+        // Combined Total PnL & Return
         const returnPct = ((s.total_capital_usd - CAPITAL_START) / CAPITAL_START * 100).toFixed(1);
         const returnPositive = s.total_capital_usd >= CAPITAL_START;
-        $('totalReturn').textContent = (returnPositive ? '+' : '') + returnPct + '%';
-        $('totalReturn').className = 'value ' + (returnPositive ? 'green' : 'red');
-        $('totalReturnMeta').textContent = fmtUsd(CAPITAL_START) + ' → ' + fmtUsd(s.total_capital_usd);
+        $('totalPnlReturn').textContent = `${fmtUsd(s.total_pnl_usd)} (${returnPositive ? '+' : ''}${returnPct}%)`;
+        $('totalPnlReturn').className = `value ${s.total_pnl_usd >= 0 ? 'green' : 'red'}`;
+        $('totalPnlReturnMeta').textContent = `${fmtUsd(CAPITAL_START)} → ${fmtUsd(s.total_capital_usd)}`;
 
         renderStrategySummary(s.by_strategy || []);
       }
