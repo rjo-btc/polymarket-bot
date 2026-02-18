@@ -37,7 +37,7 @@ const defaults = {
     short_dead_zone_hi: 15, // ENHANCED: aligned with new minimum
     short_dead_slope_lo: 8, // UPDATED: avoid weak momentum (was 3)
     short_dead_slope_hi: 10, // UPDATED: narrow dead zone (was 6)
-    enabled: true,
+    enabled: false,
   },
   session: {
     min_slope_abs: 10.0,    // OPTIMIZED: align with EMA strategy 
